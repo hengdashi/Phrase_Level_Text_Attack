@@ -1,3 +1,7 @@
+# dataset
+data/
+!data/wiki_download.sh
+
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[cod]
