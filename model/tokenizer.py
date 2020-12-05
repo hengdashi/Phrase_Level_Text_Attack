@@ -47,7 +47,7 @@ class PhrasePreTokenizer:
   def phrase_split(self, i: int, normalized_string: NormalizedString) -> List[NormalizedString]:
     splits = []
     for token in self.nlp(str(normalized_string)):
-      splits.append(normalized_string[token.i:token.i+len(token)])
+      splits.append(normalized_string[token.idx:token.idx+len(token)])
     return splits
 
   def pre_tokenize(self, pretok: PreTokenizedString):
@@ -91,12 +91,15 @@ def get_tokenizer(cwd):
   #  )
 
   files = [f"{cwd}/data/wikitext-103-raw/wiki.{split}.raw"
-           for split in ['test', 'train', 'valid']]
+           for split in ['test', 'valid']]
+  #  files = [f"{cwd}/data/wikitext-103-raw/wiki.{split}.raw"
+  #           for split in ['test', 'valid']]
+
 
   tokenizer.train(trainer, files)
-  model_files = tokenizer.model.save(f"{cwd}/data", "tokenizer-wiki")
-  tokenizer.model = WordPiece.from_file(*model_files, unk_token="[UNK]")
-  tokenizer.save(f"{cwd}/data/tokenizer-wiki.json")
+  #  model_files = tokenizer.model.save(f"{cwd}/data", "tokenizer-wiki")
+  #  tokenizer.model = WordPiece.from_file(*model_files, unk_token="[UNK]")
+  #  tokenizer.save(f"{cwd}/data/tokenizer-wiki.json")
   return tokenizer
 
 def dataset_batch_iterator(dataset):
@@ -105,8 +108,11 @@ def dataset_batch_iterator(dataset):
     yield dataset[i:i+batch_size]["text"]
 
 def tokenize_dataset(tokenizer, dataset):
-  return dataset.map(partial(_tokenize_entry, tokenizer))
-
-def _tokenize_entry(tokenizer, entry):
-  entry['text'] = tokenizer.encode(entry['text']).tokens
-  return entry
+  from collections import defaultdict
+  new_dataset = defaultdict(list)
+  for example in dataset:
+    text = tokenizer.encode(example['text']).tokens
+    new_dataset['label'].append(example['label'])
+    new_dataset['text'].append(text)
+  return datasets.Dataset.from_dict(new_dataset)
+  #  return dataset.map(lambda example: {'label': example['label'], 'text': tokenizer.encode(example['text']).tokens})
