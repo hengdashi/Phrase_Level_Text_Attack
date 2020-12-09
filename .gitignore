@@ -2,6 +2,11 @@
 data/*
 !data/wiki_download.sh
 
+# Notebooks for Test
+model/*.ipynb
+model/*.txt
+!model/IMDB_finetune.ipynb
+
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[cod]
