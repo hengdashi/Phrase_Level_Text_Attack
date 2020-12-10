@@ -11,6 +11,9 @@ attacker
 """
 
 import torch
+import datasets
+
+from model.importance import get_important_scores
 
 
 class Attacker:
@@ -24,8 +27,9 @@ class Attacker:
     self.target_model = target_model
     self.mlm_model = mlm_model
 
+
   def attack(self, entry):
-    print(type(entry))
+    return entry
     # 1. retrieve logits and label from the target model
     orig_logits = target_model(entry)[0].squeeze()
     orig_probs  = torch.softmax(orig_logits, -1)
@@ -35,7 +39,13 @@ class Attacker:
       entry['success'] = 3
       return entry
 
-    # 2. pass into mlm model to get candidates
+    # 2. pass into target model to get candidates
+    importance_scores = get_important_scores(entry,
+                                             tokenizer,
+                                             target_model,
+                                             orig_label,
+                                             orig_logits,
+                                             orig_probs)
 
 
     # 3. get substitution from the candidates
