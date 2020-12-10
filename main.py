@@ -51,7 +51,7 @@ if __name__ == "__main__":
   #  test_ds = datasets.Dataset.from_dict(test_ds[:20])
 
 
-  target_model = BertForSequenceClassification.from_pretrained(cwd/"saved_model"/"imdb_bert_base_uncased_finetuned_normal").to(device)
+  target_model = BertForSequenceClassification.from_pretrained('./data/imdb/saved_model/imdb_bert_base_uncased_finetuned_normal').to(device)
 
   model_name = "bert-large-uncased-whole-word-masking"
   tokenizer = AutoTokenizer.from_pretrained(model_name)
