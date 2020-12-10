@@ -21,17 +21,19 @@ class Attacker:
                pre_tok,
                tokenizer,
                target_model,
-               mlm_model):
+               mlm_model,
+               device):
     self.pre_tok = pre_tok
     self.tokenizer = tokenizer
     self.target_model = target_model
     self.mlm_model = mlm_model
+    self.device = device
 
 
-  def attack(self, entry):
-    return entry
+  def attack(self, entry, device):
     # 1. retrieve logits and label from the target model
-    orig_logits = target_model(entry)[0].squeeze()
+    inputs = self.tokenizer(entry['text'], return_tensors="pt", truncation=True, max_length=512, return_token_type_ids=False)
+    orig_logits = self.target_model(inputs['input_ids'].to(device), inputs['attention_mask'].to(device))[0].squeeze()
     orig_probs  = torch.softmax(orig_logits, -1)
     orig_label = torch.argmax(orig_probs)
 
@@ -41,11 +43,13 @@ class Attacker:
 
     # 2. pass into target model to get candidates
     importance_scores = get_important_scores(entry,
-                                             tokenizer,
-                                             target_model,
+                                             self.pre_tok.pre_tok.Defaults.stop_words,
+                                             self.tokenizer,
+                                             self.target_model,
                                              orig_label,
                                              orig_logits,
-                                             orig_probs)
+                                             orig_probs,
+                                             self.device)
 
 
     # 3. get substitution from the candidates

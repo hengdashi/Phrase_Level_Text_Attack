@@ -50,7 +50,7 @@ if __name__ == "__main__":
   test_ds = datasets.Dataset.from_dict(test_ds[:20])
 
 
-  target_model = BertForSequenceClassification.from_pretrained('./data/imdb/saved_model/imdb_bert_base_uncased_finetuned_normal').to(device)
+  target_model = BertForSequenceClassification.from_pretrained(cwd/"saved_model"/"imdb_bert_base_uncased_finetuned_normal").to(device)
 
   model_name = "bert-large-uncased-whole-word-masking"
   #  model_name = "bert-base-uncased"
@@ -61,8 +61,11 @@ if __name__ == "__main__":
   if mixed_precision:
     print("Convert models to mixed precision")
     target_model, mlm_model = amp.initialize([target_model, mlm_model], opt_level="O1")
-    print(type(target_model))
-    print(type(mlm_model))
+  print(type(target_model))
+  print(type(mlm_model))
+
+  target_model.eval()
+  mlm_model.eval()
 
   sequence = f"Distilled models are smaller than the models they mimic. Using them instead of the large versions would help reduce {tokenizer.mask_token} {tokenizer.mask_token}."
 
@@ -77,8 +80,6 @@ if __name__ == "__main__":
       tmp = tmp.replace(tokenizer.mask_token, tokenizer.decode([int(token)]), 1)
     print(tmp)
 
-  exit()
-
 
   phrase_tok = PhraseTokenizer()
   train_ds = train_ds.map(phrase_tok.tokenize)
@@ -86,8 +87,9 @@ if __name__ == "__main__":
 
   attacker = Attacker(phrase_tok, tokenizer, target_model, mlm_model)
 
-  for entry in tqdm(train_ds, desc="substitution", unit="doc"):
-    print(attacker.attack(entry))
+  with torch.no_grad():
+    for entry in tqdm(train_ds, desc="substitution", unit="doc"):
+      attacker.attack(entry, device)
 
 
   #  tokenizer = get_tokenizer(cwd, padding=True, truncation=True, max_length=512)
