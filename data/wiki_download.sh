@@ -9,7 +9,7 @@
 CWD=$($(cd $(dirname $0)) && pwd -P)
 echo ${CWD}
 
-wget -O ${CWD}/data/wikitext-103-raw-v1.zip https://s3.amazonaws.com/research.metamind.io/wikitext/wikitext-103-raw-v1.zip
+wget -O ${CWD}/wikitext-103-raw-v1.zip https://s3.amazonaws.com/research.metamind.io/wikitext/wikitext-103-raw-v1.zip
 
-unzip ${CWD}/data/wikitext-103-raw-v1.zip -d ${CWD}/data/
-
+unzip ${CWD}/wikitext-103-raw-v1.zip -d ${CWD}
+rm ${CWD}/wikitext-103-raw-v1.zip

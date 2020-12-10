@@ -18,14 +18,17 @@ python -m spacy download en_core_web_md
 ```bash
 conda create -y --name cs269 python=3.8.5
 conda activate cs269
-# ensure gcc version is less than 9
-conda install gcc_linux-64=8.4.0 -c conda-forge
-# install cuda dependencies
-conda install cudatoolkit-dev=10.1.243 cudnn=7.6.5 nccl=2.8.3.1 -c conda-forge
+
 cd /path/to/project/root/
-# install gpu version spacy
-pip install 'spacy[cuda102]'
+# install gpu version with cuda 11.0
+pip install torch==1.7.0+cu110 torchvision==0.8.1+cu110 torchaudio===0.7.0 -f https://download.pytorch.org/whl/torch_stable.html
 pip install -r requirements.txt
 pip install -e .
 python -m spacy download en_core_web_md
+
+# install apex for mixed precision
+cd /path/to/desired/location/
+git clone https://github.com/NVIDIA/apex
+cd apex
+pip install -v --disable-pip-version-check --no-cache-dir --global-option="--cpp_ext" --global-option="--cuda_ext" ./
 ```
