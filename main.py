@@ -25,9 +25,8 @@ from datasets import concatenate_datasets
 from tqdm import tqdm
 from transformers import (
   AutoTokenizer,
-  BertForSequenceClassification,
   AutoModelForMaskedLM,
-  pipeline
+  BertForSequenceClassification,
 )
 
 from common.data_utils import get_dataset
@@ -46,16 +45,18 @@ if __name__ == "__main__":
 
   #  print(datasets.list_datasets())
   train_ds, val_ds, test_ds = get_dataset(split_rate=0.8)
-  #  train_ds = datasets.Dataset.from_dict(train_ds[:20])
-  #  val_ds = datasets.Dataset.from_dict(val_ds[:20])
-  #  test_ds = datasets.Dataset.from_dict(test_ds[:20])
+  train_ds = datasets.Dataset.from_dict(train_ds[:20])
+  val_ds = datasets.Dataset.from_dict(val_ds[:20])
+  test_ds = datasets.Dataset.from_dict(test_ds[:20])
 
 
   target_model = BertForSequenceClassification.from_pretrained(cwd/"saved_model"/"imdb_bert_base_uncased_finetuned_normal").to(device)
 
   model_name = "bert-large-uncased-whole-word-masking"
+  #  model_name = "bert-base-uncased"
   tokenizer = AutoTokenizer.from_pretrained(model_name)
   mlm_model = AutoModelForMaskedLM.from_pretrained(model_name).to(device)
+
 
   if mixed_precision:
     print("Convert models to mixed precision")
@@ -63,17 +64,21 @@ if __name__ == "__main__":
     print(type(target_model))
     print(type(mlm_model))
 
-  sequence = f"Distilled models are {tokenizer.mask_token} than the models they mimic. Using them instead of the large versions would help {tokenizer.mask_token} out carbon footprint."
+  sequence = f"Distilled models are smaller than the models they mimic. Using them instead of the large versions would help reduce {tokenizer.mask_token} {tokenizer.mask_token}."
 
   inputs = tokenizer.encode(sequence, return_tensors="pt").to(device)
   mask_token_index = torch.where(inputs == tokenizer.mask_token_id)[1]
   token_logits = mlm_model(inputs).logits
-  mask_token_logits = token_logits[0, mask_token_index, :]
-  top_5_tokens = torch.topk(mask_token_logits, 5, dim=1).indices[0].tolist()
-  for token in top_5_tokens:
-    print(sequence.replace(tokenizer.mask_token, tokenizer.decode([token])))
+  mask_token_logits = torch.index_select(token_logits, 1, mask_token_index)
+  top_5_tokens = torch.topk(mask_token_logits, 5).indices[0].transpose(0, 1).tolist()
+  for tokens in top_5_tokens:
+    tmp = sequence
+    for token in tokens:
+      tmp = tmp.replace(tokenizer.mask_token, tokenizer.decode([int(token)]), 1)
+    print(tmp)
 
   exit()
+
 
   phrase_tok = PhraseTokenizer()
   train_ds = train_ds.map(phrase_tok.tokenize)
@@ -81,10 +86,8 @@ if __name__ == "__main__":
 
   attacker = Attacker(phrase_tok, tokenizer, target_model, mlm_model)
 
-
-  outputs = datasets.Dataset.from_dict({})
-  for entry in train_ds:
-    outputs = concatenate_datasets([outputs, attacker.attack(entry)])
+  for entry in tqdm(train_ds, desc="substitution", unit="doc"):
+    print(attacker.attack(entry))
 
 
   #  tokenizer = get_tokenizer(cwd, padding=True, truncation=True, max_length=512)
