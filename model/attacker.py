@@ -14,14 +14,26 @@ import torch
 
 
 class Attacker:
-  def __init__(self):
-    pass
+  def __init__(self,
+               pre_tok,
+               tokenizer,
+               target_model,
+               mlm_model):
+    self.pre_tok = pre_tok
+    self.tokenizer = tokenizer
+    self.target_model = target_model
+    self.mlm_model = mlm_model
 
-  def attack(self, entry, tokenizer, target_model, mlm_model):
-    # 1. retrieve logits from the target model
+  def attack(self, entry):
+    print(type(entry))
+    # 1. retrieve logits and label from the target model
     orig_logits = target_model(entry)[0].squeeze()
     orig_probs  = torch.softmax(orig_logits, -1)
-    orig_labels = torch.argmax(orig_probs)
+    orig_label = torch.argmax(orig_probs)
+
+    if orig_label != entry['label']:
+      entry['success'] = 3
+      return entry
 
     # 2. pass into mlm model to get candidates
 

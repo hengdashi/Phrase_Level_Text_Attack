@@ -21,21 +21,18 @@ except ImportError:
   mixed_precision = False
   
 import datasets
+from datasets import concatenate_datasets
 from tqdm import tqdm
-from transformers import AdamW
 from transformers import (
-  BertTokenizerFast,
+  AutoTokenizer,
   BertForSequenceClassification,
-  Trainer,
-  TrainingArguments
+  AutoModelForMaskedLM,
+  pipeline
 )
 
-from common.data_utils import get_dataset, compute_metrics
-from model.tokenizer import (
-  PhraseTokenizer
-  #  get_tokenizer,
-  #  tokenize_dataset
-)
+from common.data_utils import get_dataset
+from model.tokenizer import PhraseTokenizer
+from model.attacker import Attacker
 
 
 if __name__ == "__main__":
@@ -49,9 +46,46 @@ if __name__ == "__main__":
 
   #  print(datasets.list_datasets())
   train_ds, val_ds, test_ds = get_dataset(split_rate=0.8)
-  train_ds = datasets.Dataset.from_dict(train_ds[:20])
-  val_ds = datasets.Dataset.from_dict(val_ds[:20])
-  test_ds = datasets.Dataset.from_dict(test_ds[:20])
+  #  train_ds = datasets.Dataset.from_dict(train_ds[:20])
+  #  val_ds = datasets.Dataset.from_dict(val_ds[:20])
+  #  test_ds = datasets.Dataset.from_dict(test_ds[:20])
+
+
+  target_model = BertForSequenceClassification.from_pretrained(cwd/"saved_model"/"imdb_bert_base_uncased_finetuned_normal").to(device)
+
+  model_name = "bert-large-uncased-whole-word-masking"
+  tokenizer = AutoTokenizer.from_pretrained(model_name)
+  mlm_model = AutoModelForMaskedLM.from_pretrained(model_name).to(device)
+
+  if mixed_precision:
+    print("Convert models to mixed precision")
+    target_model, mlm_model = amp.initialize([target_model, mlm_model], opt_level="O1")
+    print(type(target_model))
+    print(type(mlm_model))
+
+  sequence = f"Distilled models are {tokenizer.mask_token} than the models they mimic. Using them instead of the large versions would help {tokenizer.mask_token} out carbon footprint."
+
+  inputs = tokenizer.encode(sequence, return_tensors="pt").to(device)
+  mask_token_index = torch.where(inputs == tokenizer.mask_token_id)[1]
+  token_logits = mlm_model(inputs).logits
+  mask_token_logits = token_logits[0, mask_token_index, :]
+  top_5_tokens = torch.topk(mask_token_logits, 5, dim=1).indices[0].tolist()
+  for token in top_5_tokens:
+    print(sequence.replace(tokenizer.mask_token, tokenizer.decode([token])))
+
+  exit()
+
+  phrase_tok = PhraseTokenizer()
+  train_ds = train_ds.map(phrase_tok.tokenize)
+  #  pprint(train_ds[0])
+
+  attacker = Attacker(phrase_tok, tokenizer, target_model, mlm_model)
+
+
+  outputs = datasets.Dataset.from_dict({})
+  for entry in train_ds:
+    outputs = concatenate_datasets([outputs, attacker.attack(entry)])
+
 
   #  tokenizer = get_tokenizer(cwd, padding=True, truncation=True, max_length=512)
   #  print(tokenizer)
@@ -60,49 +94,9 @@ if __name__ == "__main__":
   #  train_ds = tokenize_dataset(train_ds, tokenizer, batch_size=1)
   #  val_ds = tokenize_dataset(val_ds, tokenizer, batch_size=1)
 
-  tokenizer = PhraseTokenizer()
-  train_ds = train_ds.map(tokenizer.tokenize, remove_columns=['text'])
-  pprint(train_ds[0])
+
   #  column_names = ["input_ids", "attention_mask", "label"]
   #  train_ds.set_format(type="torch", columns=column_names)
   #  val_ds.set_format(type="torch", columns=column_names)
 
-
-  #  model_name = "distilbert-base-uncased"
-  #  tokenizer = BertTokenizerFast.from_pretrained(model_name)
-  #  model = BertForSequenceClassification.from_pretrained(model_name).to(device)
-  #  model.train()
-
-  #  no_decay = ['bias', 'LayerNorm.weight']
-  #  optimizer_grouped_parameters = [
-  #    {'params': [p for n, p in model.named_parameters() if not any(nd in n for nd in no_decay)], 'weight_decay': 0.01},
-  #    {'params': [p for n, p in model.named_parameters() if any(nd in n for nd in no_decay)], 'weight_decay': 0.0}
-  #  ]
-  #  optimizer = AdamW(optimizer_grouped_parameters, lr=1e-5)
-
-  #  if not mixed_precision:
-  #    model, optimizer = amp.initialize(model, optimizer, opt_level="O1")
-
-  #  training_args = TrainingArguments(
-  #    output_dir='./results',
-  #    num_train_epochs=1,
-  #    per_device_train_batch_size=train_batch_size,
-  #    per_device_eval_batch_size=val_batch_size,
-  #    warmup_steps=500,
-  #    weight_decay=0.01,
-  #    fp16=True,
-  #    logging_dir='./logs'
-  #  )
-
-  #  trainer = Trainer(
-  #    model=model,
-  #    args=training_args,
-  #    compute_metrics=compute_metrics,
-  #    train_dataset=train_ds,
-  #    eval_dataset=val_ds
-  #  )
- 
-
-  #  trainer.train()
-  #  print(trainer.evaluate())
 

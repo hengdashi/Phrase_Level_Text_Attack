@@ -49,22 +49,6 @@ from transformers import BertTokenizerFast
 #  from tokenizers.trainers import WordPieceTrainer
 
 
-TOKEN_BATCH_SIZE = 1000
-
-
-def get_spacy_tokenizer():
-  """retrieve spaCy tokenizer
-  spaCy tokenizer is used as the pre-tokenizer for the actual tokenizer
-  Returns:
-    spaCy model
-  """
-  spacy.prefer_gpu()
-  nlp = spacy.load("en_core_web_md")
-  nlp.add_pipe(nlp.create_pipe("merge_noun_chunks"))
-  nlp.add_pipe(nlp.create_pipe("merge_entities"))
-  print(nlp.pipe_names)
-  return nlp
-
 
 class PhraseTokenizer:
   def __init__(self, model_name="bert-base-uncased"):
@@ -75,7 +59,6 @@ class PhraseTokenizer:
     self.pre_tok = pre_tok
     print(self.pre_tok.pipe_names)
 
-    self.tokenizer = BertTokenizerFast.from_pretrained(model_name)
 
   def tokenize(self, entry):
     entry['text'] = entry['text'].replace('\n', '').lower()
@@ -86,62 +69,70 @@ class PhraseTokenizer:
     entry['word_offsets'] = [(token.idx, token.idx+len(token)) for token in word_doc]
     entry['phrases'] = [token.text for token in phrase_doc]
     entry['phrase_offsets'] = [(token.idx, token.idx+len(token)) for token in phrase_doc]
-    entry['sub_words'] = [self.tokenizer.tokenize(phrase) for phrase in entry['phrases']]
     return entry
 
 
-  def encode(self, entry):
-    pass
+#  TOKEN_BATCH_SIZE = 1000
 
 
-def tokenize_dataset(dataset, tokenizer, batch_size=1):
-  """tokenize the given dataset
-  One encoded object has the following fields:
-    ids: List[int], list of ids for the tokenized entry
-    type_ids: ?
-    tokens: List[str], list of strings for the tokenized entry
-    offsets: List[tuple], list of offsets for each token in the orignal text
-    attention_mask: List[int], denote whether the token is [PAD] or not
-    special_tokens_mask: List[int], denote whether the token is special or not
-    overflowing: ?
+#  def get_spacy_tokenizer():
+#    """retrieve spaCy tokenizer
+#    spaCy tokenizer is used as the pre-tokenizer for the actual tokenizer
+#    Returns:
+#      spaCy model
+#    """
+#    spacy.prefer_gpu()
+#    nlp = spacy.load("en_core_web_md")
+#    nlp.add_pipe(nlp.create_pipe("merge_noun_chunks"))
+#    nlp.add_pipe(nlp.create_pipe("merge_entities"))
+#    print(nlp.pipe_names)
+#    return nlp
+
+
+#  def tokenize_dataset(dataset, tokenizer, batch_size=1):
+#    """tokenize the given dataset
+#    One encoded object has the following fields:
+#      ids: List[int], list of ids for the tokenized entry
+#      type_ids: ?
+#      tokens: List[str], list of strings for the tokenized entry
+#      offsets: List[tuple], list of offsets for each token in the orignal text
+#      attention_mask: List[int], denote whether the token is [PAD] or not
+#      special_tokens_mask: List[int], denote whether the token is special or not
+#      overflowing: ?
     
-  Args:
-    dataset: datasets.Dataset
-    tokenizer: tokenizers.Tokenizer
-    batch_size: the size of a batch
-  Returns:
-    datasets.Dataset
-  """
-  from collections import defaultdict
-  new_dataset = defaultdict(list)
-  for i in tqdm(range(0, len(dataset), batch_size),
-                desc="tokenization", unit="batch"):
-    batch_sample = dataset[i:i+batch_size]
-    # skip last batch
-    if len(batch_sample['label']) != batch_size:
-      continue
-    batch_encoded = tokenizer.encode_batch(batch_sample['text'])
-    #  print(len(encoded))
-    #  print(encoded.type_ids)
-    #  print(encoded.tokens)
-    #  print(encoded.offsets)
-    #  print(encoded.attention_mask)
-    #  print(encoded.special_tokens_mask)
-    #  print(encoded.overflowing)
+#    Args:
+#      dataset: datasets.Dataset
+#      tokenizer: tokenizers.Tokenizer
+#      batch_size: the size of a batch
+#    Returns:
+#      datasets.Dataset
+#    """
+#    from collections import defaultdict
+#    new_dataset = defaultdict(list)
+#    for i in tqdm(range(0, len(dataset), batch_size),
+#                  desc="tokenization", unit="batch"):
+#      batch_sample = dataset[i:i+batch_size]
+#      # skip last batch
+#      if len(batch_sample['label']) != batch_size:
+#        continue
+#      batch_encoded = tokenizer.encode_batch(batch_sample['text'])
+#      #  print(len(encoded))
+#      #  print(encoded.type_ids)
+#      #  print(encoded.tokens)
+#      #  print(encoded.offsets)
+#      #  print(encoded.attention_mask)
+#      #  print(encoded.special_tokens_mask)
+#      #  print(encoded.overflowing)
 
-    new_dataset['input_ids'].append([encoded.ids for encoded in batch_encoded] if batch_size > 1 else batch_encoded[0].ids)
-    new_dataset['attention_mask'].append([encoded.attention_mask for encoded in batch_encoded] if batch_size > 1 else batch_encoded[0].attention_mask)
-    new_dataset['label'].append(batch_sample['label'] if batch_size > 1 else batch_sample['label'][0])
-  return datasets.Dataset.from_dict(new_dataset)
-
-
-
+#      new_dataset['input_ids'].append([encoded.ids for encoded in batch_encoded] if batch_size > 1 else batch_encoded[0].ids)
+#      new_dataset['attention_mask'].append([encoded.attention_mask for encoded in batch_encoded] if batch_size > 1 else batch_encoded[0].attention_mask)
+#      new_dataset['label'].append(batch_sample['label'] if batch_size > 1 else batch_sample['label'][0])
+#    return datasets.Dataset.from_dict(new_dataset)
 
 
 #  def dataset_batch_iterator(dataset):
 #    for i in range(0, len(dataset), TOKEN_BATCH_SIZE):
 #      yield dataset[i:i+TOKEN_BATCH_SIZE]['text']
-
 
 
 #  class PhrasePreTokenizer:
