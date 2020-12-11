@@ -13,7 +13,7 @@ pip install -e .
 python -m spacy download en_core_web_md
 ```
 
-### Setup (with GPU)
+## Setup (with GPU)
 
 ```bash
 conda create -y --name cs269 python=3.8.5

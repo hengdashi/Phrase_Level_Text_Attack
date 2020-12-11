@@ -10,6 +10,8 @@
 attacker
 """
 
+from pprint import pprint
+
 import torch
 import datasets
 
@@ -30,26 +32,34 @@ class Attacker:
     self.device = device
 
 
-  def attack(self, entry, device):
+  def attack(self, entry):
     # 1. retrieve logits and label from the target model
-    inputs = self.tokenizer(entry['text'], return_tensors="pt", truncation=True, max_length=512, return_token_type_ids=False)
-    orig_logits = self.target_model(inputs['input_ids'].to(device), inputs['attention_mask'].to(device))[0].squeeze()
+    encoded = self.tokenizer(entry['text'], return_tensors="pt", truncation=True, max_length=512, return_token_type_ids=False)
+    input_ids = encoded['input_ids'].to(self.device)
+    attention_mask = encoded['attention_mask'].to(self.device)
+    orig_logits = self.target_model(input_ids, attention_mask).logits.squeeze()
     orig_probs  = torch.softmax(orig_logits, -1)
     orig_label = torch.argmax(orig_probs)
+    max_prob = torch.max(orig_probs)
 
     if orig_label != entry['label']:
       entry['success'] = 3
       return entry
 
     # 2. pass into target model to get candidates
-    importance_scores = get_important_scores(entry,
-                                             self.pre_tok.pre_tok.Defaults.stop_words,
+    importance_scores = get_important_scores(entry['phrases'],
                                              self.tokenizer,
                                              self.target_model,
                                              orig_label,
-                                             orig_logits,
+                                             max_prob,
                                              orig_probs,
                                              self.device)
+
+
+    # filter out stop_words, digits, symbols
+    sorted_indices = torch.argsort(importance_scores, dim=-1, descending=True)
+    import numpy as np
+    pprint([(u, i) for (u, i) in zip(np.array(entry['phrases'])[sorted_indices], importance_scores[sorted_indices])])
 
 
     # 3. get substitution from the candidates

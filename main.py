@@ -24,7 +24,7 @@ import datasets
 from datasets import concatenate_datasets
 from tqdm import tqdm
 from transformers import (
-  AutoTokenizer,
+  BertTokenizerFast,
   AutoModelForMaskedLM,
   BertForSequenceClassification,
 )
@@ -50,11 +50,14 @@ if __name__ == "__main__":
   test_ds = datasets.Dataset.from_dict(test_ds[:20])
 
 
-  target_model = BertForSequenceClassification.from_pretrained(cwd/"saved_model"/"imdb_bert_base_uncased_finetuned_normal").to(device)
 
-  model_name = "bert-large-uncased-whole-word-masking"
-  #  model_name = "bert-base-uncased"
-  tokenizer = AutoTokenizer.from_pretrained(model_name)
+  #  model_name = "bert-large-uncased-whole-word-masking"
+  model_name = "bert-base-uncased"
+  tokenizer = BertTokenizerFast.from_pretrained(model_name)
+  phrase_tokenizer = PhraseTokenizer()
+
+
+  target_model = BertForSequenceClassification.from_pretrained(cwd/"saved_model"/"imdb_bert_base_uncased_finetuned_normal").to(device)
   mlm_model = AutoModelForMaskedLM.from_pretrained(model_name).to(device)
 
 
@@ -81,15 +84,16 @@ if __name__ == "__main__":
     print(tmp)
 
 
-  phrase_tok = PhraseTokenizer()
-  train_ds = train_ds.map(phrase_tok.tokenize)
+  train_ds = train_ds.map(phrase_tokenizer.tokenize)
   #  pprint(train_ds[0])
 
-  attacker = Attacker(phrase_tok, tokenizer, target_model, mlm_model)
+  attacker = Attacker(phrase_tokenizer, tokenizer, target_model, mlm_model, device)
 
   with torch.no_grad():
     for entry in tqdm(train_ds, desc="substitution", unit="doc"):
-      attacker.attack(entry, device)
+      print(entry['text'])
+      # TODO: gather attack success status and use them for evaluation
+      attacker.attack(entry)
 
 
   #  tokenizer = get_tokenizer(cwd, padding=True, truncation=True, max_length=512)
