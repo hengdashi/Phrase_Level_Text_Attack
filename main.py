@@ -14,7 +14,7 @@ from pathlib import Path
 from pprint import pprint
 
 import torch
-mixed_precision = True
+mixed_precision = False
 try:
   from apex import amp
 except ImportError:
@@ -35,65 +35,70 @@ from model.attacker import Attacker
 
 
 if __name__ == "__main__":
+  # 0. init setup
   cwd = Path(__file__).parent.absolute()
-
   device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
   print(f"Using {device}")
 
-  train_batch_size = 4
-  val_batch_size = 4
+  #  train_batch_size = 4
+  #  val_batch_size = 4
 
-  #  print(datasets.list_datasets())
+  # retrieve dataset
   train_ds, val_ds, test_ds = get_dataset(split_rate=0.8)
   train_ds = datasets.Dataset.from_dict(train_ds[:20])
   val_ds = datasets.Dataset.from_dict(val_ds[:20])
   test_ds = datasets.Dataset.from_dict(test_ds[:20])
 
 
-
+  # obtain model and tokenizer
   #  model_name = "bert-large-uncased-whole-word-masking"
   model_name = "bert-base-uncased"
   tokenizer = BertTokenizerFast.from_pretrained(model_name)
   phrase_tokenizer = PhraseTokenizer()
-
-
   target_model = BertForSequenceClassification.from_pretrained(cwd/"saved_model"/"imdb_bert_base_uncased_finetuned_normal").to(device)
   mlm_model = AutoModelForMaskedLM.from_pretrained(model_name).to(device)
 
-
+  # turn on mixed_precision if there's any
   if mixed_precision:
     print("Convert models to mixed precision")
     target_model, mlm_model = amp.initialize([target_model, mlm_model], opt_level="O1")
-  print(type(target_model))
-  print(type(mlm_model))
 
+  # turn models to eval model since only inference is needed
   target_model.eval()
   mlm_model.eval()
 
-  sequence = f"Distilled models are smaller than the models they mimic. Using them instead of the large versions would help reduce {tokenizer.mask_token} {tokenizer.mask_token}."
-
-  inputs = tokenizer.encode(sequence, return_tensors="pt").to(device)
-  mask_token_index = torch.where(inputs == tokenizer.mask_token_id)[1]
-  token_logits = mlm_model(inputs).logits
-  mask_token_logits = torch.index_select(token_logits, 1, mask_token_index)
-  top_5_tokens = torch.topk(mask_token_logits, 5).indices[0].transpose(0, 1).tolist()
-  for tokens in top_5_tokens:
-    tmp = sequence
-    for token in tokens:
-      tmp = tmp.replace(tokenizer.mask_token, tokenizer.decode([int(token)]), 1)
-    print(tmp)
-
-
+  # tokenize the dataset to include words and phrases
   train_ds = train_ds.map(phrase_tokenizer.tokenize)
+
   #  pprint(train_ds[0])
 
+  # create the attacker
   attacker = Attacker(phrase_tokenizer, tokenizer, target_model, mlm_model, device)
 
+  # attack the target model
   with torch.no_grad():
     for entry in tqdm(train_ds, desc="substitution", unit="doc"):
-      print(entry['text'])
+      #  print(entry['text'])
+      #  print(entry['words'])
+      #  print(entry['phrases'])
+      #  print(entry['n_words_in_phrases'])
       # TODO: gather attack success status and use them for evaluation
       attacker.attack(entry)
+
+
+  #  sequence = f"Distilled models are smaller than the models they mimic. Using them instead of the large versions would help reduce {tokenizer.mask_token} {tokenizer.mask_token}."
+
+  #  inputs = tokenizer.encode(sequence, return_tensors="pt").to(device)
+  #  mask_token_index = torch.where(inputs == tokenizer.mask_token_id)[1]
+  #  token_logits = mlm_model(inputs).logits
+  #  mask_token_logits = torch.index_select(token_logits, 1, mask_token_index)
+  #  top_5_tokens = torch.topk(mask_token_logits, 5).indices[0].transpose(0, 1).tolist()
+  #  for tokens in top_5_tokens:
+  #    tmp = sequence
+  #    for token in tokens:
+  #      tmp = tmp.replace(tokenizer.mask_token, tokenizer.decode([int(token)]), 1)
+  #    print(tmp)
+
 
 
   #  tokenizer = get_tokenizer(cwd, padding=True, truncation=True, max_length=512)

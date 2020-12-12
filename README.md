@@ -10,7 +10,7 @@ conda activate cs269
 cd /path/to/project/root/
 pip install -r requirements.txt
 pip install -e .
-python -m spacy download en_core_web_md
+python -m spacy download en_core_web_lg
 ```
 
 ## Setup (with GPU)
@@ -24,7 +24,7 @@ cd /path/to/project/root/
 pip install torch==1.7.0+cu110 torchvision==0.8.1+cu110 torchaudio===0.7.0 -f https://download.pytorch.org/whl/torch_stable.html
 pip install -r requirements.txt
 pip install -e .
-python -m spacy download en_core_web_md
+python -m spacy download en_core_web_lg
 
 # install apex for mixed precision
 cd /path/to/desired/location/
