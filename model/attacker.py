@@ -20,6 +20,7 @@ from model.tokenizer import filter_unwanted_phrases
 from model.substitution import (
   get_important_scores,
   get_substitutes,
+  get_unk_masked,
   get_phrase_masked_list
 )
 
@@ -37,7 +38,7 @@ class Attacker:
     self.mlm_model = mlm_model
     self.device = device
     # select top k candidates
-    self.k = 8
+    self.k = 5
 
 
   def attack(self, entry):
@@ -56,7 +57,11 @@ class Attacker:
 
 
     # 1. retrieve logits and label from the target model
-    encoded = self.tokenizer(entry['text'], return_tensors="pt", truncation=True, max_length=512, return_token_type_ids=False)
+    encoded = self.tokenizer(entry['text'],
+                             padding=True,
+                             truncation=True,
+                             return_token_type_ids=False,
+                             return_tensors="pt")
     input_ids = encoded['input_ids'].to(self.device)
     attention_mask = encoded['attention_mask'].to(self.device)
     orig_logits = self.target_model(input_ids, attention_mask).logits.squeeze()
@@ -64,23 +69,23 @@ class Attacker:
     orig_label = torch.argmax(orig_probs)
     max_prob = torch.max(orig_probs)
 
-    if orig_label != entry['label']:
-      entry['success'] = 3
-      return entry
+    #  if orig_label != entry['label']:
+    #    entry['success'] = 3 
+    #    return entry
 
     # filter out stop_words, digits, symbols
     filtered_indices = filter_unwanted_phrases(self.pre_tok.spacy_tokenizer.Defaults.stop_words, entry['phrases'])
 
     # 2. pass into target model to get importance scores
-    importance_scores = get_important_scores(entry['text'],
-                                             entry['phrase_offsets'],
-                                             filtered_indices,
-                                             self.tokenizer,
-                                             self.target_model,
-                                             orig_label,
-                                             max_prob,
-                                             orig_probs,
-                                             self.device)
+
+    masked_phrases = get_unk_masked(entry['text'], entry['phrase_offsets'], filtered_indices)
+    importance_scores, _ = get_important_scores(masked_phrases,
+                                                self.tokenizer,
+                                                self.target_model,
+                                                orig_label,
+                                                max_prob,
+                                                orig_probs,
+                                                self.device)
 
 
 
@@ -104,11 +109,10 @@ class Attacker:
 
     phrase_masked_list = get_phrase_masked_list(entry['text'], sorted_phrase_offsets, sorted_n_words_in_phrase)
     #  pprint(list(zip(sorted_phrases, sorted_importance, sorted_phrase_offsets, sorted_n_words_in_phrase)))
-    #  pprint(phrase_masked_list)
-
 
     for i, phrase_i_list in enumerate(phrase_masked_list):
-      for masked_text in phrase_i_list:
+      attack_results = []
+      for j, masked_text in enumerate(phrase_i_list):
         # 3. get masked token candidates from MLM
         encoded = self.tokenizer(masked_text,
                                 truncation=True,
@@ -119,21 +123,45 @@ class Attacker:
         attention_mask = encoded['attention_mask'].to(self.device)
         mask_token_index = torch.where(input_ids == self.tokenizer.mask_token_id)[-1]
         # skip if part or all of masks exceed max_length
-        if len(mask_token_index) != sorted_n_words_in_phrase[i]:
+        if len(mask_token_index) != j + 1:
           continue
 
         #  print(mask_token_index)
 
         # [n_texts, n_tokens, vocab_size (logits)]
-        mlm_logits = self.mlm_model(input_ids, attention_mask).logits
-        masked_logits = torch.index_select(mlm_logits, 1, mask_token_index)
+        masked_logits = self.mlm_model(input_ids, attention_mask).logits
+        masked_logits = torch.index_select(masked_logits, 1, mask_token_index)
         #  print(masked_logits.shape)
         top_k_ids = torch.topk(masked_logits, self.k, dim=-1).indices
-        #  print(top_k_ids)
-        final_words = get_substitutes(top_k_ids, self.tokenizer, self.mlm_model, self.device)
-        print(final_words)
+        candidates_list = get_substitutes(top_k_ids, self.tokenizer, self.mlm_model, self.device)
+        #  print(masked_text)
+        #  pprint([sorted_phrases[i], sorted_importance[i], sorted_phrase_offsets[i], sorted_n_words_in_phrase[i]])
+        #  print(candidates_list)
 
+        #  for top-k substitutes:
+        #      attack the target model and see if its successful
+        #      if true return the substitute
+        #      if false continue to the next substitute (keep track of the max confidence reduction substitute so far)
+        # Let's start the attack!!
+        for candidates in candidates_list:
+          perturbed_text = masked_text
+          mask_text = f" {' '.join([self.tokenizer.mask_token] * (j+1))} "
+          candidate = ' '.join(candidates)
+          perturbed_text = perturbed_text.replace(mask_text, candidate, 1)
+          #  print(perturbed_text)
 
-
-
+          importance_score, perturbed_label = get_important_scores([perturbed_text],
+                                                                   self.tokenizer,
+                                                                   self.target_model,
+                                                                   orig_label,
+                                                                   max_prob,
+                                                                   orig_probs,
+                                                                   self.device)
+          importance_score = importance_score.squeeze()
+          perturbed_label = perturbed_label.squeeze()
+          #  print(orig_label == perturbed_label)
+          #  print(importance_score)
+          attack_results.append((perturbed_label == orig_label, importance_score))
+      attack_results = sorted(attack_results, key=lambda x: x[0], reverse=True)
+      print(attack_results)
 

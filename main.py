@@ -45,7 +45,7 @@ if __name__ == "__main__":
 
   # retrieve dataset
   train_ds, val_ds, test_ds = get_dataset(split_rate=0.8)
-  train_ds = datasets.Dataset.from_dict(train_ds[:20])
+  train_ds = datasets.Dataset.from_dict(train_ds[:1])
   val_ds = datasets.Dataset.from_dict(val_ds[:20])
   test_ds = datasets.Dataset.from_dict(test_ds[:20])
 
@@ -78,10 +78,6 @@ if __name__ == "__main__":
   # attack the target model
   with torch.no_grad():
     for entry in tqdm(train_ds, desc="substitution", unit="doc"):
-      #  print(entry['text'])
-      #  print(entry['words'])
-      #  print(entry['phrases'])
-      #  print(entry['n_words_in_phrases'])
       # TODO: gather attack success status and use them for evaluation
       attacker.attack(entry)
 

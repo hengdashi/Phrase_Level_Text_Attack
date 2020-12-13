@@ -77,10 +77,6 @@ class PhraseTokenizer:
       i += 1
     return entry
 
-#  ['I like', 'today', 'cinema movie']
-#  ['I', 'like', 'today', 'cinema', 'movie']
-#  [2, 1, 2]
-
 
   def _custom_tokenizer(self, text):
     """a custom tokenizer to replace the spaCy tokenizer component

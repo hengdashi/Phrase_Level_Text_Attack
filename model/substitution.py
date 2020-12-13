@@ -29,7 +29,7 @@ def get_phrase_masked_list(text, sorted_phrase_offsets, sorted_n_words_in_phrase
 
 
 # return units masked with UNK at each position in the sequence
-def _get_unk_masked(text, phrase_offsets, filtered_indices):
+def get_unk_masked(text, phrase_offsets, filtered_indices):
   masked_units = []
   for i in filtered_indices:
     start, end = phrase_offsets[i]
@@ -39,9 +39,7 @@ def _get_unk_masked(text, phrase_offsets, filtered_indices):
 
 
 def get_important_scores(
-    text,
-    phrase_offsets,
-    filtered_indices,
+    masked_phrases,
     tokenizer,
     target_model,
     orig_label,
@@ -70,7 +68,6 @@ def get_important_scores(
     import_scores: a torch tensor in CPU 
   """
 
-  masked_phrases = _get_unk_masked(text, phrase_offsets, filtered_indices)
 
   encoded = tokenizer(masked_phrases,
                       truncation=True,
@@ -79,77 +76,81 @@ def get_important_scores(
                       return_token_type_ids=False,
                       return_tensors="pt")
 
-  eval_data = TensorDataset(encoded['input_ids'], encoded['attention_mask'])
-  eval_sampler = SequentialSampler(eval_data)
-  eval_dataloader = DataLoader(eval_data, sampler=eval_sampler, batch_size=batch_size)
+  inputs = torch.cat([encoded['input_ids'].unsqueeze(0), encoded['attention_mask'].unsqueeze(0)]).to(device)
+  inputs = inputs.permute(1, 0, 2).unsqueeze(2)
+  leave_1_logits = [target_model(*data).logits for data in inputs]
 
-  leave_1_logits = []
-  for batch in eval_dataloader:
-    input_ids = batch[0].to(device)
-    attention_mask = batch[1].to(device)
-    leave_1_logits.append(target_model(input_ids, attention_mask).logits)
+  #  print(test.permute(1, 0, 2).shape)
+  #  eval_data = TensorDataset(encoded['input_ids'], encoded['attention_mask'])
+  #  eval_sampler = SequentialSampler(eval_data)
+  #  eval_dataloader = DataLoader(eval_data, sampler=eval_sampler, batch_size=batch_size)
+
+  #  leave_1_logits = []
+  #  for batch in eval_dataloader:
+  #    input_ids = batch[0].to(device)
+  #    #  print(input_ids.shape)
+  #    attention_mask = batch[1].to(device)
+  #    leave_1_logits.append(target_model(input_ids, attention_mask).logits)
 
   # turn into tensor
   leave_1_logits = torch.cat(leave_1_logits, dim=0)
   leave_1_probs = torch.softmax(leave_1_logits, dim=-1)      # dim: (len(masked_phrases), num_of_classes)
-  leave_1_probs_argmax = torch.argmax(leave_1_probs, dim=-1) # dim: len(masked_phrases)
+  leave_1_labels = torch.argmax(leave_1_probs, dim=-1) # dim: len(masked_phrases)
 
   import_scores = (max_prob
                    - leave_1_probs[:, orig_label] # how the probability of original label decreases
                    +
-                   (leave_1_probs_argmax != orig_label).float() # new label not equal to original label
+                   (leave_1_labels != orig_label).float() # new label not equal to original label
                    *
-                   (leave_1_probs.max(dim=-1)[0] - torch.index_select(orig_probs, 0, leave_1_probs_argmax))
+                   (leave_1_probs.max(dim=-1)[0] - torch.index_select(orig_probs, 0, leave_1_labels))
                    )           # probability of changed label
 
-  return import_scores
+  return import_scores, leave_1_labels
 
 
 def get_substitutes(top_k_ids, tokenizer, mlm_model, device):
   """get_substitutes find the set of substitution candidates using perplexity.
+  Limitation: due to the lack of GPU memory, we set a threshold
   Args:
-    substitutes: 
+    top_k_ids: top k ids from the mlm model, tensor (1, n_masks, k)
+    tokenizer: Bert Tokenizer
+    mlm_model: mlm model
+    device: where to transfer the data
+  Returns:
+    candidates_list: list of list of candidates ranked by perplexity
   """
   # all substitutes  list of list of token-id (all candidates)
   c_loss = nn.CrossEntropyLoss(reduction='none')
 
   # here we need to get permutation of top k ids
-  # because we have no idea what combination
-  # fits the most
+  # because we have no idea what combination fits the most
 
-  word_list = []
+  # assuming first dimension is 1
+  top_k_ids = top_k_ids.squeeze()
+  #  print(top_k_ids)
+  # https://stackoverflow.com/questions/1208118
+  meshgrid = [tensor.unsqueeze(0) for tensor in torch.meshgrid(*top_k_ids)]
+  ids_comb = torch.cat(meshgrid).T.reshape(-1, len(top_k_ids)).unique(dim=-1) \
+             if len(top_k_ids.shape) != 1 else top_k_ids.unsqueeze(0).T
+  #  print(ids_comb)
+  #  print(top_k_ids)
+  #  print(ids_comb)
 
-  # find all possible candidates 
-  all_substitutes = []
-  for i in range(top_k_ids.size(0)):
-    if len(all_substitutes) == 0:
-      lev_i = top_k_ids[i]
-      all_substitutes = [[int(c)] for c in lev_i]
-    else:
-      lev_i = []
-      for all_sub in all_substitutes:
-        for j in top_k_ids[i]:
-          lev_i.append(all_sub + [int(j)])
-      all_substitutes = lev_i
+  # set a threshold
+  # TODO: we should select combinations instead of this simple cut
+  ids_comb = ids_comb[:24]
 
-  # all_substitutes = all_substitutes[:24]
-  all_substitutes = torch.tensor(all_substitutes) # [ N, L ]
-  all_substitutes = all_substitutes[:24].to(device)
-  
-  print(all_substitutes.shape) # (K ^ t, K)
+  # compute perplexity
+  N, L = ids_comb.size()
+  logits = mlm_model(ids_comb)[0]
+  ppl = c_loss(logits.view(N*L, -1), ids_comb.view(-1))
+  ppl = torch.exp(torch.mean(ppl.view(N, L), dim=-1))
 
-  N, L = all_substitutes.size()
-  word_predictions = mlm_model(all_substitutes)[0] # N L vocab-size
-  ppl = c_loss(word_predictions.view(N*L, -1), all_substitutes.view(-1)) # [ N*L ] 
-  ppl = torch.exp(torch.mean(ppl.view(N, L), dim=-1)) # N  
+  # sort candidates
+  sorted_indices = torch.argsort(ppl)
+  sorted_token_ids_list = torch.index_select(ids_comb, 0, sorted_indices).tolist()
+  tokens_list = [tokenizer.convert_ids_to_tokens(tokens) for tokens in sorted_token_ids_list]
+  # necessary to remove subwords
+  candidates_list = [[tokenizer.convert_tokens_to_string([token]) for token in tokens] for tokens in tokens_list]
 
-  _, word_list = torch.sort(ppl)
-  word_list = [all_substitutes[i] for i in word_list]
-  final_words = []
-  for word in word_list[:24]:
-    tokens = [tokenizer._convert_id_to_token(int(i)) for i in word]
-    text = tokenizer.convert_tokens_to_string(tokens)
-    final_words.append(text)
-
-  del all_substitutes
-  return final_words
+  return candidates_list
