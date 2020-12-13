@@ -6,14 +6,24 @@ from torch.utils.data import DataLoader, SequentialSampler, TensorDataset
 
 
 def get_phrase_masked_list(text, sorted_phrase_offsets, sorted_n_words_in_phrase):
+  """retrieve phrase masked list.
+  Args:
+    text [str]: original text
+    sorted_phrase_offsets List[tuple(start, end), ...]: sorted offsets by importance
+    sorted_n_words_in_phrase List[int]: sorted number of words in phrases
+  Returns:
+    phrase_masked_list: len(phrase_masked_list) == len(sorted_n_words_in_phrase)
+      for each phrase in the list, 1 < len(list_of_masked_text) < n_words_in_phrase
+  """
   phrase_masked_list = []
   # this triple for loop would be super slow
   # TODO: figure a way to optimize it
-  for i, (start, end) in zip(sorted_n_words_in_phrase, sorted_phrase_offsets):
-    for n_mask in range(1, i+1):
+  for i, (n, (start, end)) in enumerate(zip(sorted_n_words_in_phrase, sorted_phrase_offsets)):
+    phrase_masked_list.append([])
+    for n_mask in range(1, n+1):
       # make sure there are spaces around it
       mask_text = f" {' '.join(['[MASK]'] * n_mask)} "
-      phrase_masked_list.append(text[:start] + mask_text + text[end:])
+      phrase_masked_list[i].append(text[:start] + mask_text + text[end:])
 
   return phrase_masked_list
 
@@ -95,42 +105,51 @@ def get_important_scores(
   return import_scores
 
 
-def get_substitutes(substitutes, tokenizer, mlm_model, device):
-    # all substitutes  list of list of token-id (all candidates)
-    c_loss = nn.CrossEntropyLoss(reduction='none')
-    word_list = []
+def get_substitutes(top_k_ids, tokenizer, mlm_model, device):
+  """get_substitutes find the set of substitution candidates using perplexity.
+  Args:
+    substitutes: 
+  """
+  # all substitutes  list of list of token-id (all candidates)
+  c_loss = nn.CrossEntropyLoss(reduction='none')
 
-    # find all possible candidates 
-    all_substitutes = []
-    for i in range(substitutes.size(0)):
-        if len(all_substitutes) == 0:
-            lev_i = substitutes[i]
-            all_substitutes = [[int(c)] for c in lev_i]
-        else:
-            lev_i = []
-            for all_sub in all_substitutes:
-                for j in substitutes[i]:
-                    lev_i.append(all_sub + [int(j)])
-            all_substitutes = lev_i
+  # here we need to get permutation of top k ids
+  # because we have no idea what combination
+  # fits the most
 
-    # all_substitutes = all_substitutes[:24]
-    all_substitutes = torch.tensor(all_substitutes) # [ N, L ]
-    all_substitutes = all_substitutes[:24].to(device)
-    
-    print(all_substitutes.shape) # (K ^ t, K)
+  word_list = []
 
-    N, L = all_substitutes.size()
-    word_predictions = mlm_model(all_substitutes)[0] # N L vocab-size
-    ppl = c_loss(word_predictions.view(N*L, -1), all_substitutes.view(-1)) # [ N*L ] 
-    ppl = torch.exp(torch.mean(ppl.view(N, L), dim=-1)) # N  
-    
-    _, word_list = torch.sort(ppl)
-    word_list = [all_substitutes[i] for i in word_list]
-    final_words = []
-    for word in word_list[:24]:
-        tokens = [tokenizer._convert_id_to_token(int(i)) for i in word]
-        text = tokenizer.convert_tokens_to_string(tokens)
-        final_words.append(text)
-        
-    del all_substitutes
-    return final_words
+  # find all possible candidates 
+  all_substitutes = []
+  for i in range(top_k_ids.size(0)):
+    if len(all_substitutes) == 0:
+      lev_i = top_k_ids[i]
+      all_substitutes = [[int(c)] for c in lev_i]
+    else:
+      lev_i = []
+      for all_sub in all_substitutes:
+        for j in top_k_ids[i]:
+          lev_i.append(all_sub + [int(j)])
+      all_substitutes = lev_i
+
+  # all_substitutes = all_substitutes[:24]
+  all_substitutes = torch.tensor(all_substitutes) # [ N, L ]
+  all_substitutes = all_substitutes[:24].to(device)
+  
+  print(all_substitutes.shape) # (K ^ t, K)
+
+  N, L = all_substitutes.size()
+  word_predictions = mlm_model(all_substitutes)[0] # N L vocab-size
+  ppl = c_loss(word_predictions.view(N*L, -1), all_substitutes.view(-1)) # [ N*L ] 
+  ppl = torch.exp(torch.mean(ppl.view(N, L), dim=-1)) # N  
+
+  _, word_list = torch.sort(ppl)
+  word_list = [all_substitutes[i] for i in word_list]
+  final_words = []
+  for word in word_list[:24]:
+    tokens = [tokenizer._convert_id_to_token(int(i)) for i in word]
+    text = tokenizer.convert_tokens_to_string(tokens)
+    final_words.append(text)
+
+  del all_substitutes
+  return final_words
