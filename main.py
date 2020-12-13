@@ -45,7 +45,7 @@ if __name__ == "__main__":
 
   # retrieve dataset
   train_ds, val_ds, test_ds = get_dataset(split_rate=0.8)
-  train_ds = datasets.Dataset.from_dict(train_ds[:1])
+  train_ds = datasets.Dataset.from_dict(train_ds[:20])
   val_ds = datasets.Dataset.from_dict(val_ds[:20])
   test_ds = datasets.Dataset.from_dict(test_ds[:20])
 

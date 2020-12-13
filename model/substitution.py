@@ -65,7 +65,7 @@ def get_important_scores(
     batch_size: the batch size of the input.
     max_length: the maximum length to keep in the original text.
   Returns:
-    import_scores: a torch tensor in CPU 
+    import_scores: a torch tensor with dim (len(masked_phrases),)
   """
 
 
