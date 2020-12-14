@@ -4,6 +4,7 @@ import torch
 import torch.nn as nn
 from torch.utils.data import DataLoader, SequentialSampler, TensorDataset
 
+from model.tokenizer import get_filtered_k_phrases, filter_unwanted_phrases
 
 def get_phrase_masked_list(text, sorted_phrase_offsets, sorted_n_words_in_phrase):
   """retrieve phrase masked list.
@@ -126,7 +127,7 @@ def get_substitutes(top_k_ids, tokenizer, mlm_model, device):
   # because we have no idea what combination fits the most
 
   # assuming first dimension is 1
-  top_k_ids = top_k_ids.squeeze()
+  #top_k_ids = top_k_ids.squeeze()
   #  print(top_k_ids)
   # https://stackoverflow.com/questions/1208118
   meshgrid = [tensor.unsqueeze(0) for tensor in torch.meshgrid(*top_k_ids)]
@@ -154,3 +155,78 @@ def get_substitutes(top_k_ids, tokenizer, mlm_model, device):
   candidates_list = [[tokenizer.convert_tokens_to_string([token]) for token in tokens] for tokens in tokens_list]
 
   return candidates_list
+
+def get_phrase_substitutes(input_ids, attention_mask, mask_token_index, stop_words, tokenizer, mlm_model, device, beam_width=10):
+  # all substitutes  list of list of token-id (all candidates)
+  c_loss = nn.CrossEntropyLoss(reduction='none')
+
+  word_positions = len(mask_token_index)
+        
+    
+  masked_logits = mlm_model(input_ids, attention_mask).logits
+  masked_logits = torch.index_select(masked_logits, 1, mask_token_index[0])
+    
+  # top_ids has a beam_width number of word combinations with smallest perplexities
+  # the initial candidates are the beam_width number of words with the highest logits
+  #top_ids = torch.topk(masked_logits, beam_width**2, dim=-1).indices[0, 0]
+
+  _, sorted_ids = torch.sort(masked_logits[0,0], dim=-1, descending=True)
+  filtered_ids = get_filtered_k_phrases(sorted_ids, tokenizer, stop_words, beam_width)
+
+  #need to be passed in
+  #filtered_indices = filter_unwanted_phrases(stop_words, tokenizer.convert_ids_to_tokens(top_ids))
+    
+  #initialize candidates pool with the top k candidates at the first position
+  candidate_ids = filtered_ids.unsqueeze(0).T.to(device)
+    
+  for p in range(1, word_positions):
+    
+    # cur_options = (beam_width, beam_width)
+    cur_options = torch.empty((len(candidate_ids) * beam_width, p+1), dtype=torch.long).to(device)
+    for a in range(len(candidate_ids)):
+      input_ids[0, mask_token_index[:p]] = candidate_ids[a]
+
+      masked_logits = mlm_model(input_ids, attention_mask).logits
+      masked_logits = torch.index_select(masked_logits, 1, mask_token_index[p])
+            
+      _, sorted_ids = torch.sort(masked_logits[0,0], dim=-1, descending=True)
+        
+      new_ids = get_filtered_k_phrases(sorted_ids, tokenizer, stop_words, beam_width).unsqueeze(0).T.to(device)
+      for b in range(beam_width):
+        options = torch.cat((candidate_ids[a], new_ids[b]))
+        cur_options[a*beam_width + b] = options
+        
+    N, L = cur_options.size()
+    logits = mlm_model(cur_options)[0]
+
+    ppl = c_loss(logits.view(N*L, -1), cur_options.view(-1))
+    ppl = torch.exp(torch.mean(ppl.view(N, L), dim=-1))
+
+    # the smaller the perplexity, the more coherent the sequence is
+    sorted_indices = torch.argsort(ppl)
+    candidate_ids = torch.index_select(cur_options, 0, sorted_indices)[:beam_width]
+    
+  sorted_token_ids_list = candidate_ids.tolist()
+  tokens_list = [tokenizer.convert_ids_to_tokens(tokens) for tokens in sorted_token_ids_list]
+    
+  # necessary step to remove subwords
+  candidates_list = [[tokenizer.convert_tokens_to_string([token]) for token in tokens] for tokens in tokens_list]
+    
+    
+  return candidates_list
+
+def get_word_substitues(input_ids, attention_mask, mask_token_index, tokenizer, mlm_model, K=8, threshold=3.0):
+  masked_logits = mlm_model(input_ids, attention_mask).logits
+  masked_logits = torch.index_select(masked_logits, 1, mask_token_index)
+
+  top_k_ids = torch.topk(masked_logits, K, dim=-1).indices[0]
+  substitute_scores = masked_logits[0,0][top_k_ids][0]
+  substitute_ids = top_k_ids[0]
+    
+  words = []
+  for (i, score) in zip(substitute_ids, substitute_scores):
+    if threshold != 0 and score < threshold:
+      break
+    words.append([tokenizer._convert_id_to_token(int(i))])
+            
+  return words

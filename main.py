@@ -28,13 +28,20 @@ from transformers import (
   AutoModelForMaskedLM,
   BertForSequenceClassification,
 )
+import tensorflow_hub as hub
+import numpy as np
 
 from common.data_utils import get_dataset
 from model.tokenizer import PhraseTokenizer
 from model.attacker import Attacker
 
+import time
+
 
 if __name__ == "__main__":
+    
+  start_time = time.time()
+
   # 0. init setup
   cwd = Path(__file__).parent.absolute()
   device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -43,19 +50,29 @@ if __name__ == "__main__":
   #  train_batch_size = 4
   #  val_batch_size = 4
 
+  print('load dataset')
   # retrieve dataset
   train_ds, val_ds, test_ds = get_dataset(split_rate=0.8)
   train_ds = datasets.Dataset.from_dict(train_ds[:20])
   val_ds = datasets.Dataset.from_dict(val_ds[:20])
   test_ds = datasets.Dataset.from_dict(test_ds[:20])
 
-
+  print('load word/sentence similarity embedding')
+  # retrieve the USE encoder and counter fitting vector embeddings
+  encoder_use = hub.load("./data/use") #url: https://tfhub.dev/google/universal-sentence-encoder/4
+  
+  embeddings_cf = np.load('./data/sim_mat/embeddings_cf.npy')
+  word_ids = np.load('./data/sim_mat/word_id.npy',allow_pickle='TRUE').item()
+    
+  print('Obtain model and tokenizer')
   # obtain model and tokenizer
   #  model_name = "bert-large-uncased-whole-word-masking"
   model_name = "bert-base-uncased"
   tokenizer = BertTokenizerFast.from_pretrained(model_name)
   phrase_tokenizer = PhraseTokenizer()
-  target_model = BertForSequenceClassification.from_pretrained(cwd/"saved_model"/"imdb_bert_base_uncased_finetuned_normal").to(device)
+    
+  #cwd/"saved_model"/"imdb_bert_base_uncased_finetuned_normal"
+  target_model = BertForSequenceClassification.from_pretrained('./data/imdb/saved_model/imdb_bert_base_uncased_finetuned_normal').to(device)
   mlm_model = AutoModelForMaskedLM.from_pretrained(model_name).to(device)
 
   # turn on mixed_precision if there's any
@@ -73,13 +90,20 @@ if __name__ == "__main__":
   #  pprint(train_ds[0])
 
   # create the attacker
-  attacker = Attacker(phrase_tokenizer, tokenizer, target_model, mlm_model, device)
+  attacker = Attacker(phrase_tokenizer, tokenizer, target_model, mlm_model, encoder_use, embeddings_cf, device)
 
   # attack the target model
   with torch.no_grad():
     for entry in tqdm(train_ds, desc="substitution", unit="doc"):
       # TODO: gather attack success status and use them for evaluation
-      attacker.attack(entry)
+      entry = attacker.attack(entry)
+      #print(f"success: {entry['success']}, change -words: {entry['word_changes']}, -phrases: {entry['phrase_changes']}")
+      #print('original text: ', entry['text'])
+      #print('adv text: ', entry['final_adv'])
+      #print('changes: ', entry['changes'])
+        
+        
+  print("--- %s seconds ---" % (time.time() - start_time))
 
 
   #  sequence = f"Distilled models are smaller than the models they mimic. Using them instead of the large versions would help reduce {tokenizer.mask_token} {tokenizer.mask_token}."

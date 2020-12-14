@@ -17,6 +17,7 @@ import spacy
 from spacy.tokens import Doc
 import datasets
 from tokenizers import pre_tokenizers
+import torch
 
 
 def filter_unwanted_phrases(stop_words, phrases):
@@ -29,6 +30,26 @@ def filter_unwanted_phrases(stop_words, phrases):
       indices.append(i)
   return indices
 
+def phrase_is_wanted(stop_words, word):
+  pattern = re.compile("[\W\d_]+")
+  # not in stop words and not a combination of symbols and digits
+  return (word not in stop_words and pattern.fullmatch(word) is None)
+
+def get_filtered_k_phrases(token_ids, tokenizer, stop_words, k):
+  pattern = re.compile("[\W\d_]+")
+           
+  count = 0
+  new_ids = []
+  
+  for i in token_ids:
+    word = tokenizer.convert_ids_to_tokens(torch.tensor([i]))[0]
+    if word not in stop_words and pattern.fullmatch(word) is None:
+      new_ids.append(i)
+      count += 1
+    if count == k:
+      break
+  
+  return torch.tensor(new_ids)
 
 class PhraseTokenizer:
   """phrase tokenizer
