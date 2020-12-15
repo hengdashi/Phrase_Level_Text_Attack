@@ -1,6 +1,6 @@
-from pprint import pprint
+import json
 
-def evaluate(entries, num_pred_failures):
+def evaluate(entries, num_pred_failures, eval_f_pth):
     
   attack_success = 0
 
@@ -46,4 +46,8 @@ def evaluate(entries, num_pred_failures):
   print('word-changed-rate: {:.4f}, phrase-changed-rate: {:.4f}'.format(word_change_rate, phrase_change_rate))
   print('mean-phrase-length: {:.4f}'.format(mean_phrase_len))
   print()
+    
+  results= {'original_acc': original_acc, 'after_atk_acc': after_atk_acc, 'query_per_attack': query_per_attack, 'success_rate': success_rate, 'word_per_seq': word_per_seq, 'phrase_per_seq': phrase_per_seq, 'attack_success': attack_success, 'total_q': total_q, 'total_word_changes': total_word_changes, 'total_words': total_words, 'total_phrase_changes': total_phrase_changes, 'total_phrases': total_phrases, 'query_num': query_num, 'total_phrase_len': total_phrase_len, 'num_total_entry': num_total_entry}
+          
+  json.dump(results, open(eval_f_pth, "w"), indent=2)
           

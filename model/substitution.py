@@ -69,7 +69,6 @@ def get_important_scores(
     import_scores: a torch tensor with dim (len(masked_phrases),)
   """
 
-
   encoded = tokenizer(masked_phrases,
                       truncation=True,
                       padding='max_length',
@@ -158,32 +157,30 @@ def get_phrase_substitutes(input_ids, attention_mask, mask_token_index, stop_wor
     
   # top_ids has a beam_width number of word combinations with smallest perplexities
   # the initial candidates are the beam_width number of words with the highest logits
-  #top_ids = torch.topk(masked_logits, beam_width*K, dim=-1).indices[0, 0]
+  top_ids = torch.topk(masked_logits, K, dim=-1).indices[0]
 
-  _, sorted_ids = torch.sort(masked_logits[0,0], dim=-1, descending=True)
-  filtered_ids = get_filtered_k_phrases(sorted_ids, tokenizer, stop_words, K)
+  #_, sorted_ids = torch.sort(masked_logits[0,0], dim=-1, descending=True)
+  #filtered_ids = get_filtered_k_phrases(sorted_ids, tokenizer, stop_words, K)
 
   #initialize candidates pool with the top k candidates at the first position
-  candidate_ids = filtered_ids.unsqueeze(0).T.to(device)
+  candidate_ids = top_ids.T.to(device)
     
   for p in range(1, word_positions):
+    new_inputs = input_ids.repeat(len(candidate_ids), 1)
+    new_inputs[:, mask_token_index[:p]] = candidate_ids
+    
+    masked_logits = mlm_model(new_inputs, attention_mask).logits
+    masked_logits = torch.index_select(masked_logits, 1, mask_token_index[p])
+    query_num += len(new_inputs)
+    
+    top_ids = torch.topk(masked_logits, beam_width, dim=-1).indices
+    
+    repeated_cands = candidate_ids.unsqueeze(1).repeat(1, beam_width, 1).reshape(-1,p)
+    repeated_new_cands = top_ids.squeeze().reshape(-1, 1)
     
     # cur_options = (beam_width, beam_width)
-    cur_options = torch.empty((len(candidate_ids) * beam_width, p+1), dtype=torch.long).to(device)
-    for a in range(len(candidate_ids)):
-      input_ids[0, mask_token_index[:p]] = candidate_ids[a]
-
-      masked_logits = mlm_model(input_ids, attention_mask).logits
-      masked_logits = torch.index_select(masked_logits, 1, mask_token_index[p])
-      query_num += len(input_ids)
-      
-      _, sorted_ids = torch.sort(masked_logits[0,0], dim=-1, descending=True)
-      new_ids = get_filtered_k_phrases(sorted_ids, tokenizer, stop_words, beam_width).unsqueeze(0).T.to(device)
+    cur_options = torch.cat((repeated_cands, repeated_new_cands), 1)
     
-      for b in range(beam_width):
-        options = torch.cat((candidate_ids[a], new_ids[b]))
-        cur_options[a*beam_width + b] = options
-        
     N, L = cur_options.size()
     logits = mlm_model(cur_options)[0]
     query_num += len(cur_options)

@@ -91,7 +91,6 @@ class Attacker:
     entry['final_adv'] = None
     
 
-
     # 1. retrieve logits and label from the target model
     encoded = self.tokenizer(entry['text'],
                              padding=True,
@@ -111,7 +110,6 @@ class Attacker:
 
     # filter out stop_words, digits & symbol combination
     filtered_indices = filter_unwanted_phrases(self.stop_words, entry['phrases'])
-    
 
     masked_phrases = get_unk_masked(entry['text'], entry['phrase_offsets'], filtered_indices)
     importance_scores, _ = get_important_scores(masked_phrases,
@@ -202,13 +200,13 @@ class Attacker:
           perturbed_text = perturbed_text.replace(mask_text, candidate, 1)
             
           # semantic check -> if the phrase changes too much
-          if len(candidates) > 1:
-            seq_embeddings = self.sent_encoder([candidate, phrases[i]])
-            #seq_embeddings = self.sent_encoder([perturbed_text, entry['text']])
-            semantic_sim =  np.dot(*seq_embeddings)
+          #if len(candidates) > 1:
+          #seq_embeddings = self.sent_encoder([candidate, phrases[i]])
+          seq_embeddings = self.sent_encoder([perturbed_text, entry['text']])
+          semantic_sim =  np.dot(*seq_embeddings)
 
-            if semantic_sim < self.sent_semantic_thres:
-              continue
+          if semantic_sim < self.sent_semantic_thres:
+            continue
 
           importance_score, perturbed_label = get_important_scores([perturbed_text],
                                                                    self.tokenizer,

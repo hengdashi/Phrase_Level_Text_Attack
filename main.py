@@ -55,7 +55,7 @@ if __name__ == "__main__":
   print('load dataset')
   # retrieve dataset
   train_ds, val_ds, test_ds = get_dataset(split_rate=0.8)
-  train_ds = datasets.Dataset.from_dict(train_ds[:20])
+  train_ds = datasets.Dataset.from_dict(train_ds[258:2258])
   val_ds = datasets.Dataset.from_dict(val_ds[:20])
   test_ds = datasets.Dataset.from_dict(test_ds[:20])
 
@@ -79,7 +79,6 @@ if __name__ == "__main__":
 
   # turn on mixed_precision if there's any
   if mixed_precision:
-    print("Convert models to mixed precision")
     target_model, mlm_model = amp.initialize([target_model, mlm_model], opt_level="O1")
 
   # turn models to eval model since only inference is needed
@@ -88,16 +87,16 @@ if __name__ == "__main__":
 
   # tokenize the dataset to include words and phrases
   train_ds = train_ds.map(phrase_tokenizer.tokenize)
-
   #  pprint(train_ds[0])
 
   # create the attacker
-  attacker = Attacker(phrase_tokenizer, tokenizer, target_model, mlm_model, encoder_use, embeddings_cf, device, k=5, beam_width=8, conf_thres=3.0, sent_semantic_thres=0.5, change_threshold = 0.3)
+  attacker = Attacker(phrase_tokenizer, tokenizer, target_model, mlm_model, encoder_use, embeddings_cf, device, k=8, beam_width=8, conf_thres=3.0, sent_semantic_thres=0.4, change_threshold = 0.1)
 
   output_entries = []
   pred_failures = 0
   
   output_pth = './data/adv_features.txt'
+  eval_f_pth = './data/eval.txt'
 
   # clean output file
   f = open(output_pth, "w")
@@ -107,7 +106,7 @@ if __name__ == "__main__":
   print('\nstart attack')
   # attack the target model
   with torch.no_grad():
-    for entry in tqdm(train_ds, desc="substitution", unit="doc"):
+    for i, entry in enumerate(tqdm(train_ds, desc="substitution", unit="doc")):
       entry = attacker.attack(entry)
       #print(f"success: {entry['success']}, change -words: {entry['word_changes']}, -phrases: {entry['phrase_changes']}")
       #print('original text: ', entry['text'])
@@ -121,10 +120,12 @@ if __name__ == "__main__":
       if not entry['pred_success']:
         pred_failures += 1
       
+      if (i + 1) % 100 == 0:
+        evaluate(output_entries, pred_failures, eval_f_pth)
   
   print("--- %.2f mins ---" % (int(time.time() - start_time) / 60.0))
 
-  evaluate(output_entries, pred_failures)
+  evaluate(output_entries, pred_failures, eval_f_pth)
 
   
 

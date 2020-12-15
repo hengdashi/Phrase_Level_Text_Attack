@@ -117,7 +117,6 @@ class PhraseTokenizer:
     entry['phrases'] = [token.text for token in entity_doc]
     entry['phrase_offsets'] = [(token.idx, token.idx+len(token)) for token in entity_doc]
     
-    
     i, j = 0, 0
     entry['n_words_in_phrases'] = [0] * len(entry['phrases'])
     while i < len(word_doc) and j < len(entity_doc):
@@ -129,12 +128,11 @@ class PhraseTokenizer:
     if len(phrase_doc) == 0:
       return entry
     
-    start_i = phrase_doc[0][1]
     output_phrases = []
     output_offsets = []
     output_n_words = []
     last_i = 0
-    for _, s, e in phrase_doc[1:]:
+    for _, s, e in phrase_doc:
       output_phrases += entry['phrases'][last_i:s] + [' '.join(entry['phrases'][s:e])]
       output_offsets += entry['phrase_offsets'][last_i:s] + [(entry['phrase_offsets'][s][0], entry['phrase_offsets'][e-1][1])]
       output_n_words += entry['n_words_in_phrases'][last_i:s] + [sum(entry['n_words_in_phrases'][s:e])]
