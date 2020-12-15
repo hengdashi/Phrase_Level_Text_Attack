@@ -55,7 +55,7 @@ if __name__ == "__main__":
   print('load dataset')
   # retrieve dataset
   train_ds, val_ds, test_ds = get_dataset(split_rate=0.8)
-  train_ds = datasets.Dataset.from_dict(train_ds[:3])
+  train_ds = datasets.Dataset.from_dict(train_ds[:20])
   val_ds = datasets.Dataset.from_dict(val_ds[:20])
   test_ds = datasets.Dataset.from_dict(test_ds[:20])
 
@@ -92,7 +92,7 @@ if __name__ == "__main__":
   #  pprint(train_ds[0])
 
   # create the attacker
-  attacker = Attacker(phrase_tokenizer, tokenizer, target_model, mlm_model, encoder_use, embeddings_cf, device, k=5, beam_width=8, conf_thres=3.0, sent_semantic_thres=0.5, change_threshold = 0.1)
+  attacker = Attacker(phrase_tokenizer, tokenizer, target_model, mlm_model, encoder_use, embeddings_cf, device, k=5, beam_width=8, conf_thres=3.0, sent_semantic_thres=0.5, change_threshold = 0.3)
 
   output_entries = []
   pred_failures = 0
@@ -104,6 +104,7 @@ if __name__ == "__main__":
   f.writelines('')
   f.close()
   
+  print('\nstart attack')
   # attack the target model
   with torch.no_grad():
     for entry in tqdm(train_ds, desc="substitution", unit="doc"):
@@ -113,18 +114,17 @@ if __name__ == "__main__":
       #print('adv text: ', entry['final_adv'])
       #print('changes: ', entry['changes'])
       
-      if entry['success']:
-        new_entry = { k: entry[k] for k in {'text', 'label', 'word_changes', 'phrase_changes', 'word_num', 'phrase_num', 'final_adv', 'pred_success', 'query_num' } }
-        output_entries.append(new_entry)
-        json.dump(new_entry, open(output_pth, "a"), indent=2)
+      new_entry = { k: entry[k] for k in {'text', 'label',  'pred_success', 'success', 'changes', 'final_adv',  'word_changes', 'phrase_changes', 'word_num', 'phrase_num',   'query_num', 'phrase_len' } }
+      output_entries.append(new_entry)
+      json.dump(new_entry, open(output_pth, "a"), indent=2)
         
-      elif not entry['pred_success']:
+      if not entry['pred_success']:
         pred_failures += 1
       
   
-  print("--- %.4f mins ---" % (int(time.time() - start_time) / 60.0))
+  print("--- %.2f mins ---" % (int(time.time() - start_time) / 60.0))
 
-  evaluate(output_entries, pred_failures, len(train_ds))
+  evaluate(output_entries, pred_failures)
 
   
 

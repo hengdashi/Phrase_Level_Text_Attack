@@ -15,6 +15,7 @@ from tqdm import tqdm
 import numpy as np
 import spacy
 from spacy.tokens import Doc
+from spacy.matcher import Matcher
 import datasets
 from tokenizers import pre_tokenizers
 import torch
@@ -22,16 +23,13 @@ import torch
 
 def filter_unwanted_phrases(stop_words, phrases):
   indices = []
-  phrase_num = 0
   pattern = re.compile("[\W\d_]+")
   for i, token in enumerate(phrases):
     combined_token = ''.join(token.split())
     # not in stop words and not a combination of symbols and digits
     if combined_token not in stop_words and pattern.fullmatch(combined_token) is None:
       indices.append(i)
-      if len(token) > 1:
-        phrase_num += 1
-  return indices, phrase_num
+  return indices
 
 def phrase_is_wanted(stop_words, word):
   pattern = re.compile("[\W\d_]+")
@@ -68,9 +66,31 @@ class PhraseTokenizer:
     spacy.prefer_gpu()
     spacy_tokenizer = spacy.load("en_core_web_lg")
     #spacy_tokenizer.add_pipe(spacy_tokenizer.create_pipe("merge_noun_chunks"))
-    spacy_tokenizer.add_pipe(spacy_tokenizer.create_pipe("merge_entities"))
+    
     #  spacy_tokenizer.add_pipe("merge_noun_chunks")
     #  spacy_tokenizer.add_pipe("merge_entities")
+    # verb phrase
+    # verb + preposition: 'sit up'
+    pattern1 = [{'POS': 'VERB'},
+               {'POS': 'PRON', 'OP': '?'},
+               {'POS': 'ADP', 'OP': '+'}]
+
+    # preposition phrase: prep + noun + prep
+    pattern2 = [{'POS': 'ADP'},
+               {'POS': 'NOUN'},
+               {'POS': 'ADP'}]
+
+    # instantiate a Matcher instance
+    phrase_matcher = Matcher(spacy_tokenizer.vocab)
+
+    #matcher.add("Verb ADP ADP phrase", None,  pattern2)
+    phrase_matcher.add("Verb Phrase", None,  pattern1)
+    phrase_matcher.add("Preposition Phrase", None,  pattern2)
+    
+    spacy_tokenizer.add_pipe(spacy_tokenizer.create_pipe("merge_entities"))
+
+    spacy_tokenizer.add_pipe(phrase_matcher)
+        
     self.spacy_tokenizer = spacy_tokenizer
     self.spacy_tokenizer.tokenizer = self._custom_tokenizer
     print(self.spacy_tokenizer.pipe_names)
@@ -85,21 +105,50 @@ class PhraseTokenizer:
       entry: a dictionary containing transformed and newly added data.
     """
     text = entry['text'].replace('\n', '').lower()
-    #with self.spacy_tokenizer.disable_pipes(['merge_noun_chunks', 'merge_entities']):
-    with self.spacy_tokenizer.disable_pipes(['merge_entities']):
-      word_doc = self.spacy_tokenizer(text)
+
     phrase_doc = self.spacy_tokenizer(text)
+    with self.spacy_tokenizer.disable_pipes(['Matcher']):
+      entity_doc = self.spacy_tokenizer(text)
+    with self.spacy_tokenizer.disable_pipes(['merge_entities', 'Matcher']):
+      word_doc = self.spacy_tokenizer(text)
+
     entry['words'] = [token.text for token in word_doc]
     entry['word_offsets'] = [(token.idx, token.idx+len(token)) for token in word_doc]
-    entry['phrases'] = [token.text for token in phrase_doc]
-    entry['phrase_offsets'] = [(token.idx, token.idx+len(token)) for token in phrase_doc]
+    entry['phrases'] = [token.text for token in entity_doc]
+    entry['phrase_offsets'] = [(token.idx, token.idx+len(token)) for token in entity_doc]
+    
+    
     i, j = 0, 0
     entry['n_words_in_phrases'] = [0] * len(entry['phrases'])
-    while i < len(word_doc) and j < len(phrase_doc):
+    while i < len(word_doc) and j < len(entity_doc):
       entry['n_words_in_phrases'][j] += 1
-      if word_doc[i].idx+len(word_doc[i]) == phrase_doc[j].idx+len(phrase_doc[j]):
+      if word_doc[i].idx+len(word_doc[i]) == entity_doc[j].idx+len(entity_doc[j]):
         j += 1
-      i += 1
+      i += 1 
+
+    if len(phrase_doc) == 0:
+      return entry
+    
+    start_i = phrase_doc[0][1]
+    output_phrases = []
+    output_offsets = []
+    output_n_words = []
+    last_i = 0
+    for _, s, e in phrase_doc[1:]:
+      output_phrases += entry['phrases'][last_i:s] + [' '.join(entry['phrases'][s:e])]
+      output_offsets += entry['phrase_offsets'][last_i:s] + [(entry['phrase_offsets'][s][0], entry['phrase_offsets'][e-1][1])]
+      output_n_words += entry['n_words_in_phrases'][last_i:s] + [sum(entry['n_words_in_phrases'][s:e])]
+      last_i = e
+    
+    end_i = phrase_doc[-1][2]
+    output_phrases += entry['phrases'][end_i:]
+    output_offsets += entry['phrase_offsets'][end_i:]
+    output_n_words += entry['n_words_in_phrases'][end_i:]
+        
+    entry['phrases'] = output_phrases
+    entry['phrase_offsets'] = output_offsets
+    entry['n_words_in_phrases'] = output_n_words
+    
     return entry
 
 

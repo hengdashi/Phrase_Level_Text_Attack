@@ -144,7 +144,7 @@ def get_substitutes(top_k_ids, tokenizer, mlm_model, device):
 
   return candidates_list
 
-def get_phrase_substitutes(input_ids, attention_mask, mask_token_index, stop_words, tokenizer, mlm_model, device, beam_width=10):
+def get_phrase_substitutes(input_ids, attention_mask, mask_token_index, stop_words, tokenizer, mlm_model, device, beam_width=10, K=6):
   # all substitutes  list of list of token-id (all candidates)
   c_loss = nn.CrossEntropyLoss(reduction='none')
 
@@ -158,10 +158,10 @@ def get_phrase_substitutes(input_ids, attention_mask, mask_token_index, stop_wor
     
   # top_ids has a beam_width number of word combinations with smallest perplexities
   # the initial candidates are the beam_width number of words with the highest logits
-  #top_ids = torch.topk(masked_logits, beam_width**2, dim=-1).indices[0, 0]
+  #top_ids = torch.topk(masked_logits, beam_width*K, dim=-1).indices[0, 0]
 
   _, sorted_ids = torch.sort(masked_logits[0,0], dim=-1, descending=True)
-  filtered_ids = get_filtered_k_phrases(sorted_ids, tokenizer, stop_words, beam_width)
+  filtered_ids = get_filtered_k_phrases(sorted_ids, tokenizer, stop_words, K)
 
   #initialize candidates pool with the top k candidates at the first position
   candidate_ids = filtered_ids.unsqueeze(0).T.to(device)
@@ -178,8 +178,8 @@ def get_phrase_substitutes(input_ids, attention_mask, mask_token_index, stop_wor
       query_num += len(input_ids)
       
       _, sorted_ids = torch.sort(masked_logits[0,0], dim=-1, descending=True)
-        
       new_ids = get_filtered_k_phrases(sorted_ids, tokenizer, stop_words, beam_width).unsqueeze(0).T.to(device)
+    
       for b in range(beam_width):
         options = torch.cat((candidate_ids[a], new_ids[b]))
         cur_options[a*beam_width + b] = options
@@ -192,8 +192,8 @@ def get_phrase_substitutes(input_ids, attention_mask, mask_token_index, stop_wor
     ppl = torch.exp(torch.mean(ppl.view(N, L), dim=-1))
 
     # the smaller the perplexity, the more coherent the sequence is
-    sorted_indices = torch.argsort(ppl)
-    candidate_ids = torch.index_select(cur_options, 0, sorted_indices)[:beam_width]
+    sorted_indices = torch.argsort(ppl)[:K]
+    candidate_ids = torch.index_select(cur_options, 0, sorted_indices)
     
   sorted_token_ids_list = candidate_ids.tolist()
   tokens_list = [tokenizer.convert_ids_to_tokens(tokens) for tokens in sorted_token_ids_list]

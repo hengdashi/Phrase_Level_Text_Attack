@@ -39,7 +39,7 @@ class Attacker:
                k=8,
                beam_width=10,
                conf_thres=3.0,
-               sent_semantic_thres=0.5,
+               sent_semantic_thres=0.6,
                change_threshold = 0.4):
     self.pre_tok          = pre_tok
     self.stop_words       = self.pre_tok.spacy_tokenizer.Defaults.stop_words
@@ -83,8 +83,12 @@ class Attacker:
     entry['pred_success'] = True
     entry['success'] = False
     entry['word_num'] = len(entry['words'])
-    entry['phrase_num'] = 0
+    
+    phrase_lengths = [n for n in entry['n_words_in_phrases'] if n > 1]
+    entry['phrase_num'] = len(phrase_lengths)
+    entry['phrase_len'] = sum(phrase_lengths)
     entry['query_num'] = 0
+    entry['final_adv'] = None
     
 
 
@@ -106,7 +110,7 @@ class Attacker:
       return entry
 
     # filter out stop_words, digits & symbol combination
-    filtered_indices, entry['phrase_num'] = filter_unwanted_phrases(self.stop_words, entry['phrases'])
+    filtered_indices = filter_unwanted_phrases(self.stop_words, entry['phrases'])
     
 
     masked_phrases = get_unk_masked(entry['text'], entry['phrase_offsets'], filtered_indices)
@@ -149,12 +153,8 @@ class Attacker:
 
     for i in sorted_indices_np:
       # break when attack is successful or changes exceed threshold
-      if entry['success'] == True and changes/max_change_threshold > self.change_threshold:
-        if entry['success'] == True:
-          print(entry['text'])
-          print(text)
-          print("SUCCESS!")
-        return entry
+      if phrase_changes/max_change_threshold > self.change_threshold:
+        break
 
       phrase_masked_list = get_phrase_masked_list(text,
                                                   [phrase_offsets[i]],
@@ -181,7 +181,7 @@ class Attacker:
           candidates_list = get_word_substitues(input_ids, attention_mask, mask_token_index, self.tokenizer, self.mlm_model, K=self.k, threshold=self.conf_thres)
           entry['query_num'] += len(input_ids)
         elif len(mask_token_index) > 1:
-          candidates_list, qn = get_phrase_substitutes(input_ids, attention_mask, mask_token_index, self.stop_words, self.tokenizer, self.mlm_model, self.device, beam_width=self.beam_width)
+          candidates_list, qn = get_phrase_substitutes(input_ids, attention_mask, mask_token_index, self.stop_words, self.tokenizer, self.mlm_model, self.device, beam_width=self.beam_width, K=self.k)
           entry['query_num'] += qn
 
         mask_text = f" {' '.join([self.tokenizer.mask_token] * (j+1))} "
@@ -201,9 +201,10 @@ class Attacker:
           # replace the mask_text with candidate
           perturbed_text = perturbed_text.replace(mask_text, candidate, 1)
             
-          # semantic check -> if the whole sentence changes a lot
+          # semantic check -> if the phrase changes too much
           if len(candidates) > 1:
-            seq_embeddings = self.sent_encoder([perturbed_text, entry['text']])
+            seq_embeddings = self.sent_encoder([candidate, phrases[i]])
+            #seq_embeddings = self.sent_encoder([perturbed_text, entry['text']])
             semantic_sim =  np.dot(*seq_embeddings)
 
             if semantic_sim < self.sent_semantic_thres:
@@ -277,7 +278,7 @@ class Attacker:
     entry['phrase_changes'] = phrase_changes
     entry['word_changes'] = word_changes
     entry['changes'] = changes
-    entry['final_adv'] = result[3]
+    entry['final_adv'] = text
     
     return entry
 
