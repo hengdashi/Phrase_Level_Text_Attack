@@ -35,7 +35,12 @@ class Attacker:
                mlm_model,
                sentence_encoder,
                word_embedding,
-               device):
+               device,
+               k=8,
+               beam_width=10,
+               conf_thres=3.0,
+               sent_semantic_thres=0.5,
+               change_threshold = 0.4):
     self.pre_tok          = pre_tok
     self.stop_words       = self.pre_tok.spacy_tokenizer.Defaults.stop_words
     self.tokenizer        = tokenizer
@@ -46,17 +51,17 @@ class Attacker:
     self.device           = device
     
     # select top k candidates
-    self.k                = 8
-    self.beam_width       = 10
+    self.k                = k
+    self.beam_width       = beam_width
     
     # single-word confidence threshold
-    self.conf_thres       = 3.0
+    self.conf_thres       = conf_thres
     
     # USE sentence semantic threshold
-    self.sent_semantic_thres = 0.5
+    self.sent_semantic_thres = sent_semantic_thres
     
     # percentage of words can be changed in a sequence
-    self.change_threshold = 0.4
+    self.change_threshold = change_threshold
 
 
   def attack(self, entry):
@@ -75,6 +80,12 @@ class Attacker:
     entry['phrase_changes'] = 0
     entry['word_changes'] = 0
     entry['changes'] = []
+    entry['pred_success'] = True
+    entry['success'] = False
+    entry['word_num'] = len(entry['words'])
+    entry['phrase_num'] = 0
+    entry['query_num'] = 0
+    
 
 
     # 1. retrieve logits and label from the target model
@@ -91,11 +102,12 @@ class Attacker:
     max_prob = torch.max(orig_probs)
 
     if orig_label != entry['label']:
-      entry['success'] = False
+      entry['pred_success'] = False
       return entry
 
     # filter out stop_words, digits & symbol combination
-    filtered_indices = filter_unwanted_phrases(self.stop_words, entry['phrases'])
+    filtered_indices, entry['phrase_num'] = filter_unwanted_phrases(self.stop_words, entry['phrases'])
+    
 
     masked_phrases = get_unk_masked(entry['text'], entry['phrase_offsets'], filtered_indices)
     importance_scores, _ = get_important_scores(masked_phrases,
@@ -105,6 +117,7 @@ class Attacker:
                                                 max_prob,
                                                 orig_probs,
                                                 self.device)
+    entry['query_num'] += len(masked_phrases)
 
     # this is the index after the filter and
     # cannot only applied to importance scores and filtered_indices
@@ -123,8 +136,6 @@ class Attacker:
       # sorted_importance is a sorted PyTorch Tensor containing importance scores ranked by importance
 
     max_change_threshold = len(filtered_indices)
-    #  print(max_change_threshold)
-    entry['success'] = False
     
     # record how many perturbations have been made
     phrase_changes = 0
@@ -148,7 +159,6 @@ class Attacker:
       phrase_masked_list = get_phrase_masked_list(text,
                                                   [phrase_offsets[i]],
                                                   [n_words_in_phrases[i]])[0]
-      #  pprint(list(zip(sorted_phrases, sorted_importance, sorted_phrase_offsets, sorted_n_words_in_phrase)))
 
       attack_results = []
       for j, masked_text in enumerate(phrase_masked_list):
@@ -165,31 +175,14 @@ class Attacker:
         if len(mask_token_index) != j + 1:
           continue
 
-        #  print(mask_token_index)
-
-        # [n_texts, n_tokens, vocab_size (logits)]
-        #masked_logits = self.mlm_model(input_ids, attention_mask).logits
-        #masked_logits = torch.index_select(masked_logits, 1, mask_token_index)
-
-        #top_k_ids = torch.topk(masked_logits, self.k, dim=-1).indices[0]
         
         candidates_list = []
         if len(mask_token_index) == 1:
           candidates_list = get_word_substitues(input_ids, attention_mask, mask_token_index, self.tokenizer, self.mlm_model, K=self.k, threshold=self.conf_thres)
+          entry['query_num'] += len(input_ids)
         elif len(mask_token_index) > 1:
-          candidates_list = get_phrase_substitutes(input_ids, attention_mask, mask_token_index, self.stop_words, self.tokenizer, self.mlm_model, self.device, beam_width=self.beam_width)
-        
-        #candidates_list = get_substitutes(top_k_ids, self.tokenizer, self.mlm_model, self.device)
-        
-        #  print(masked_text)
-        #  pprint([sorted_phrases[i], sorted_importance[i], sorted_phrase_offsets[i], sorted_n_words_in_phrase[i]])
-        #  print(candidates_list)
-
-        #  for top-k substitutes:
-        #      attack the target model and see if its successful
-        #      if true return the substitute
-        #      if false continue to the next substitute (keep track of the max confidence reduction substitute so far)
-        # Let's start the attack!!
+          candidates_list, qn = get_phrase_substitutes(input_ids, attention_mask, mask_token_index, self.stop_words, self.tokenizer, self.mlm_model, self.device, beam_width=self.beam_width)
+          entry['query_num'] += qn
 
         mask_text = f" {' '.join([self.tokenizer.mask_token] * (j+1))} "
         for candidates in candidates_list:
@@ -207,7 +200,6 @@ class Attacker:
             
           # replace the mask_text with candidate
           perturbed_text = perturbed_text.replace(mask_text, candidate, 1)
-          #  print(perturbed_text)
             
           # semantic check -> if the whole sentence changes a lot
           if len(candidates) > 1:
@@ -225,14 +217,15 @@ class Attacker:
                                                                    orig_probs,
                                                                    self.device)
           importance_score = importance_score.squeeze()
+          entry['query_num'] += 1
+        
           perturbed_label = perturbed_label.squeeze()
-          #  print(orig_label == perturbed_label)
-          #  print(importance_score)
         
           if perturbed_label != orig_label:
             attack_results = [(perturbed_label == orig_label, j, candidate, perturbed_text, importance_score)]
             entry['success'] = True
-            entry['phrase_changes'] = phrase_changes + 1
+            if n_words_in_phrases[i] > 1:
+              entry['phrase_changes'] = phrase_changes + 1
             entry['word_changes'] = word_changes + n_words_in_phrases[i]
             changes.append((phrases[i], candidate))
             entry['changes'] = changes 
@@ -242,26 +235,22 @@ class Attacker:
           attack_results.append((perturbed_label == orig_label, j, candidate, perturbed_text, importance_score))
 
       attack_results = sorted(attack_results, key=lambda x: x[-1], reverse=True)
-      #  print(attack_results)
         
       if len(attack_results) == 0:
-        print('no candidates for: ', phrases[i])
+        #print('no candidates for: ', phrases[i])
         continue
-      
 
       # no matter what, changes plus 1
-      phrase_changes += 1
+      if n_words_in_phrases[i] > 1:
+        phrase_changes += 1
       word_changes += n_words_in_phrases[i]
     
       # attack the max confidence one when there's no success
       result = attack_results[0]
 
-      #  print(text)
       text = result[3]
-      #  print(text)
-      #  print(n_words_in_phrases[i])
+    
       n_words_in_phrases[i] = result[1] + 1
-      #  print(n_words_in_phrases[i])
         
       # update perturbed token to phrases and phrase offsets
       length_diff = len(phrases[i]) - len(result[2])
@@ -274,17 +263,13 @@ class Attacker:
           if change_i != i:
             start -= length_diff
           new_offsets.append([start, end])
-        #  print(phrase_offsets)
+
         phrase_offsets = new_offsets
-        #  print(phrase_offsets)
-      
-      #  print(phrases[i])
+
+        
       changes.append((phrases[i], result[2]))
       phrases[i] = result[2]
       
-      #  print(phrases[i])
-      #  print()
-    
       text = result[3]
     
     

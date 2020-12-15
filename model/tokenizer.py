@@ -22,13 +22,16 @@ import torch
 
 def filter_unwanted_phrases(stop_words, phrases):
   indices = []
+  phrase_num = 0
   pattern = re.compile("[\W\d_]+")
   for i, token in enumerate(phrases):
-    token = ''.join(token.split())
+    combined_token = ''.join(token.split())
     # not in stop words and not a combination of symbols and digits
-    if token not in stop_words and pattern.fullmatch(token) is None:
+    if combined_token not in stop_words and pattern.fullmatch(combined_token) is None:
       indices.append(i)
-  return indices
+      if len(token) > 1:
+        phrase_num += 1
+  return indices, phrase_num
 
 def phrase_is_wanted(stop_words, word):
   pattern = re.compile("[\W\d_]+")
@@ -64,7 +67,7 @@ class PhraseTokenizer:
 
     spacy.prefer_gpu()
     spacy_tokenizer = spacy.load("en_core_web_lg")
-    spacy_tokenizer.add_pipe(spacy_tokenizer.create_pipe("merge_noun_chunks"))
+    #spacy_tokenizer.add_pipe(spacy_tokenizer.create_pipe("merge_noun_chunks"))
     spacy_tokenizer.add_pipe(spacy_tokenizer.create_pipe("merge_entities"))
     #  spacy_tokenizer.add_pipe("merge_noun_chunks")
     #  spacy_tokenizer.add_pipe("merge_entities")
@@ -82,7 +85,8 @@ class PhraseTokenizer:
       entry: a dictionary containing transformed and newly added data.
     """
     text = entry['text'].replace('\n', '').lower()
-    with self.spacy_tokenizer.disable_pipes(['merge_noun_chunks', 'merge_entities']):
+    #with self.spacy_tokenizer.disable_pipes(['merge_noun_chunks', 'merge_entities']):
+    with self.spacy_tokenizer.disable_pipes(['merge_entities']):
       word_doc = self.spacy_tokenizer(text)
     phrase_doc = self.spacy_tokenizer(text)
     entry['words'] = [token.text for token in word_doc]

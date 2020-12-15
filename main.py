@@ -34,8 +34,10 @@ import numpy as np
 from common.data_utils import get_dataset
 from model.tokenizer import PhraseTokenizer
 from model.attacker import Attacker
+from model.evaluate import evaluate
 
 import time
+import json
 
 
 if __name__ == "__main__":
@@ -53,7 +55,7 @@ if __name__ == "__main__":
   print('load dataset')
   # retrieve dataset
   train_ds, val_ds, test_ds = get_dataset(split_rate=0.8)
-  train_ds = datasets.Dataset.from_dict(train_ds[:20])
+  train_ds = datasets.Dataset.from_dict(train_ds[:3])
   val_ds = datasets.Dataset.from_dict(val_ds[:20])
   test_ds = datasets.Dataset.from_dict(test_ds[:20])
 
@@ -90,20 +92,41 @@ if __name__ == "__main__":
   #  pprint(train_ds[0])
 
   # create the attacker
-  attacker = Attacker(phrase_tokenizer, tokenizer, target_model, mlm_model, encoder_use, embeddings_cf, device)
+  attacker = Attacker(phrase_tokenizer, tokenizer, target_model, mlm_model, encoder_use, embeddings_cf, device, k=5, beam_width=8, conf_thres=3.0, sent_semantic_thres=0.5, change_threshold = 0.1)
 
+  output_entries = []
+  pred_failures = 0
+  
+  output_pth = './data/adv_features.txt'
+
+  # clean output file
+  f = open(output_pth, "w")
+  f.writelines('')
+  f.close()
+  
   # attack the target model
   with torch.no_grad():
     for entry in tqdm(train_ds, desc="substitution", unit="doc"):
-      # TODO: gather attack success status and use them for evaluation
       entry = attacker.attack(entry)
       #print(f"success: {entry['success']}, change -words: {entry['word_changes']}, -phrases: {entry['phrase_changes']}")
       #print('original text: ', entry['text'])
       #print('adv text: ', entry['final_adv'])
       #print('changes: ', entry['changes'])
+      
+      if entry['success']:
+        new_entry = { k: entry[k] for k in {'text', 'label', 'word_changes', 'phrase_changes', 'word_num', 'phrase_num', 'final_adv', 'pred_success', 'query_num' } }
+        output_entries.append(new_entry)
+        json.dump(new_entry, open(output_pth, "a"), indent=2)
         
-        
-  print("--- %s seconds ---" % (time.time() - start_time))
+      elif not entry['pred_success']:
+        pred_failures += 1
+      
+  
+  print("--- %.4f mins ---" % (int(time.time() - start_time) / 60.0))
+
+  evaluate(output_entries, pred_failures, len(train_ds))
+
+  
 
 
   #  sequence = f"Distilled models are smaller than the models they mimic. Using them instead of the large versions would help reduce {tokenizer.mask_token} {tokenizer.mask_token}."

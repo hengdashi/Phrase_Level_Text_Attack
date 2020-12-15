@@ -81,21 +81,9 @@ def get_important_scores(
   inputs = inputs.permute(1, 0, 2).unsqueeze(2)
   leave_1_logits = [target_model(*data).logits for data in inputs]
 
-  #  print(test.permute(1, 0, 2).shape)
-  #  eval_data = TensorDataset(encoded['input_ids'], encoded['attention_mask'])
-  #  eval_sampler = SequentialSampler(eval_data)
-  #  eval_dataloader = DataLoader(eval_data, sampler=eval_sampler, batch_size=batch_size)
-
-  #  leave_1_logits = []
-  #  for batch in eval_dataloader:
-  #    input_ids = batch[0].to(device)
-  #    #  print(input_ids.shape)
-  #    attention_mask = batch[1].to(device)
-  #    leave_1_logits.append(target_model(input_ids, attention_mask).logits)
-
   # turn into tensor
   leave_1_logits = torch.cat(leave_1_logits, dim=0)
-  leave_1_probs = torch.softmax(leave_1_logits, dim=-1)      # dim: (len(masked_phrases), num_of_classes)
+  leave_1_probs = torch.softmax(leave_1_logits, dim=-1) # dim: (len(masked_phrases), num_of_classes)
   leave_1_labels = torch.argmax(leave_1_probs, dim=-1) # dim: len(masked_phrases)
 
   import_scores = (max_prob
@@ -161,9 +149,11 @@ def get_phrase_substitutes(input_ids, attention_mask, mask_token_index, stop_wor
   c_loss = nn.CrossEntropyLoss(reduction='none')
 
   word_positions = len(mask_token_index)
-        
+  query_num = 0
     
   masked_logits = mlm_model(input_ids, attention_mask).logits
+  query_num += len(input_ids)
+  
   masked_logits = torch.index_select(masked_logits, 1, mask_token_index[0])
     
   # top_ids has a beam_width number of word combinations with smallest perplexities
@@ -173,9 +163,6 @@ def get_phrase_substitutes(input_ids, attention_mask, mask_token_index, stop_wor
   _, sorted_ids = torch.sort(masked_logits[0,0], dim=-1, descending=True)
   filtered_ids = get_filtered_k_phrases(sorted_ids, tokenizer, stop_words, beam_width)
 
-  #need to be passed in
-  #filtered_indices = filter_unwanted_phrases(stop_words, tokenizer.convert_ids_to_tokens(top_ids))
-    
   #initialize candidates pool with the top k candidates at the first position
   candidate_ids = filtered_ids.unsqueeze(0).T.to(device)
     
@@ -188,7 +175,8 @@ def get_phrase_substitutes(input_ids, attention_mask, mask_token_index, stop_wor
 
       masked_logits = mlm_model(input_ids, attention_mask).logits
       masked_logits = torch.index_select(masked_logits, 1, mask_token_index[p])
-            
+      query_num += len(input_ids)
+      
       _, sorted_ids = torch.sort(masked_logits[0,0], dim=-1, descending=True)
         
       new_ids = get_filtered_k_phrases(sorted_ids, tokenizer, stop_words, beam_width).unsqueeze(0).T.to(device)
@@ -198,6 +186,7 @@ def get_phrase_substitutes(input_ids, attention_mask, mask_token_index, stop_wor
         
     N, L = cur_options.size()
     logits = mlm_model(cur_options)[0]
+    query_num += len(cur_options)
 
     ppl = c_loss(logits.view(N*L, -1), cur_options.view(-1))
     ppl = torch.exp(torch.mean(ppl.view(N, L), dim=-1))
@@ -213,7 +202,7 @@ def get_phrase_substitutes(input_ids, attention_mask, mask_token_index, stop_wor
   candidates_list = [[tokenizer.convert_tokens_to_string([token]) for token in tokens] for tokens in tokens_list]
     
     
-  return candidates_list
+  return candidates_list, query_num
 
 def get_word_substitues(input_ids, attention_mask, mask_token_index, tokenizer, mlm_model, K=8, threshold=3.0):
   masked_logits = mlm_model(input_ids, attention_mask).logits

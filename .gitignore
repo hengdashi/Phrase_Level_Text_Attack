@@ -11,7 +11,7 @@ data/*
 # Notebooks for Test
 model/*.ipynb
 model/*.txt
-./*.ipynb
+*.ipynb
 
 # saved_model
 saved_model/
