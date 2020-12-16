@@ -204,8 +204,11 @@ def get_phrase_substitutes(input_ids, attention_mask, mask_token_index, stop_wor
 def get_word_substitues(input_ids, attention_mask, mask_token_index, tokenizer, mlm_model, K=8, threshold=3.0):
   masked_logits = mlm_model(input_ids, attention_mask).logits
   masked_logits = torch.index_select(masked_logits, 1, mask_token_index)
-
+  
   top_k_ids = torch.topk(masked_logits, K, dim=-1).indices[0]
+  #print(masked_logits.shape)
+  #print(top_k_ids.shape)
+  #print(mask_token_index)
   substitute_scores = masked_logits[0,0][top_k_ids][0]
   substitute_ids = top_k_ids[0]
     

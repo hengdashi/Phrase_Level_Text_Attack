@@ -110,18 +110,22 @@ if __name__ == "__main__":
   test_ds = test_ds.map(phrase_tokenizer.tokenize)
 
   # create the attacker
-  attacker = Attacker(phrase_tokenizer, tokenizer, target_model, mlm_model, encoder_use,  device, k=15, beam_width=8, conf_thres=3.0, sent_semantic_thres=0.4, change_threshold=0.1) #embeddings_cf,
+  params = {'k':15, 'beam_width':8, 'conf_thres':3.0, 'sent_semantic_thres':0.7, 'change_threshold':0.1}
+  attacker = Attacker(phrase_tokenizer, tokenizer, target_model, mlm_model, encoder_use,  device, **params) #embeddings_cf,
 
   output_entries = []
+  adv_examples = []
   pred_failures = 0
 
-  output_pth = './data/adv_features.txt'
-  eval_f_pth = './data/eval.txt'
+  suffix = f"{params['k']}_{params['beam_width']}_{params['sent_semantic_thres']}"
+  output_pth = f'./data/features/features_{suffix}.json'
+  eval_pth = f'./data/eval/eval_{suffix}.json'
+  adv_set_pth = f'./data/adv_set/adv_{suffix}.json'
 
   # clean output file
-  f = open(output_pth, "w")
-  f.writelines('')
-  f.close()
+  #f = open(output_pth, "w")
+  #f.writelines('')
+  #f.close()
   
   print('\nstart attack')
   # attack the target model
@@ -135,18 +139,23 @@ if __name__ == "__main__":
       #print('changes: ', entry['changes'])
 
       new_entry = { k: entry[k] for k in {'text', 'label',  'pred_success', 'success', 'changes', 'final_adv',  'word_changes', 'phrase_changes', 'word_num', 'phrase_num',   'query_num', 'phrase_len' } }
-      output_entries.append(new_entry)
-      json.dump(new_entry, open(output_pth, "a"), indent=2)
 
       if not entry['pred_success']:
         pred_failures += 1
+      else:
+        seq_embeddings = encoder_use([entry['final_adv'], entry['text']])
+        semantic_sim =  np.dot(*seq_embeddings)
+        new_entry['semantic_sim'] = float(semantic_sim)
+        adv_examples.append({k: entry[k] for k in {'label', 'text'}})
 
-      desc = f"[Succeeded / Failed / Total] {len(output_entries)-pred_failures} / {pred_failures} / {len(output_entries)}"
-      progressbar.set_description(desc=desc, refresh=True)
+      #json.dump(new_entry, open(output_pth, "a"), indent=2)
+      output_entries.append(new_entry)
 
       if (i + 1) % 100 == 0:
-        evaluate(output_entries, pred_failures, eval_f_pth)
+        evaluate(output_entries, pred_failures, eval_pth, params)
 
+  json.dump(output_entries, open(output_pth, "w"), indent=2)
+  json.dump(adv_examples, open(adv_set_pth, "w"), indent=2)
   print("--- %.2f mins ---" % (int(time.time() - start_time) / 60.0))
 
-  evaluate(output_entries, pred_failures, eval_f_pth)
+  evaluate(output_entries, pred_failures, eval_pth, params)
