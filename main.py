@@ -59,7 +59,7 @@ if __name__ == "__main__":
   #val_ds = datasets.Dataset.from_dict(val_ds[:20])
   #test_ds = datasets.Dataset.from_dict(test_ds[:20])
   _, test_ds = get_dataset(split_rate=1.0)
-  test_ds = datasets.Dataset.from_dict(test_ds[:10])
+  test_ds = datasets.Dataset.from_dict(test_ds[:1000])
 
   print('load word/sentence similarity embedding')
   # retrieve the USE encoder and counter fitting vector embeddings
