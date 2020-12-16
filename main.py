@@ -59,14 +59,14 @@ if __name__ == "__main__":
   #val_ds = datasets.Dataset.from_dict(val_ds[:20])
   #test_ds = datasets.Dataset.from_dict(test_ds[:20])
   _, test_ds = get_dataset(split_rate=1.0)
-  test_ds = datasets.Dataset.from_dict(test_ds[:1000])
+  test_ds = datasets.Dataset.from_dict(test_ds[:10])
 
   print('load word/sentence similarity embedding')
   # retrieve the USE encoder and counter fitting vector embeddings
   encoder_use = hub.load("./data/use") #url: https://tfhub.dev/google/universal-sentence-encoder/4
   
-  embeddings_cf = np.load('./data/sim_mat/embeddings_cf.npy')
-  word_ids = np.load('./data/sim_mat/word_id.npy',allow_pickle='TRUE').item()
+  #embeddings_cf = np.load('./data/sim_mat/embeddings_cf.npy')
+  #word_ids = np.load('./data/sim_mat/word_id.npy',allow_pickle='TRUE').item()
     
   print('Obtain model and tokenizer')
   # obtain model and tokenizer
@@ -91,7 +91,7 @@ if __name__ == "__main__":
   test_ds = test_ds.map(phrase_tokenizer.tokenize)
 
   # create the attacker
-  attacker = Attacker(phrase_tokenizer, tokenizer, target_model, mlm_model, encoder_use, embeddings_cf, device, k=8, beam_width=8, conf_thres=3.0, sent_semantic_thres=0.4, change_threshold = 0.1)
+  attacker = Attacker(phrase_tokenizer, tokenizer, target_model, mlm_model, encoder_use,  device, k=8, beam_width=8, conf_thres=3.0, sent_semantic_thres=0.4, change_threshold = 0.1) #embeddings_cf,
 
   output_entries = []
   pred_failures = 0

@@ -34,7 +34,7 @@ class Attacker:
                target_model,
                mlm_model,
                sentence_encoder,
-               word_embedding,
+               #word_embedding,
                device,
                k=8,
                beam_width=10,
@@ -47,7 +47,7 @@ class Attacker:
     self.target_model     = target_model
     self.mlm_model        = mlm_model
     self.sent_encoder     = sentence_encoder
-    self.word_embedding   = word_embedding
+    #self.word_embedding   = word_embedding
     self.device           = device
     
     # select top k candidates
@@ -161,21 +161,24 @@ class Attacker:
       attack_results = []
       for j, masked_text in enumerate(phrase_masked_list):
         # 3. get masked token candidates from MLM
+        
         encoded = self.tokenizer(masked_text,
                                  truncation=True,
                                  padding=True,
                                  return_token_type_ids=False,
                                  return_tensors='pt')
+        
         input_ids = encoded['input_ids'].to(self.device)
         attention_mask = encoded['attention_mask'].to(self.device)
         mask_token_index = torch.where(input_ids == self.tokenizer.mask_token_id)[-1]
         # skip if part or all of masks exceed max_length
-        if len(mask_token_index) != j + 1:
+        if len(mask_token_index) > j + 1:
           continue
 
         
         candidates_list = []
         if len(mask_token_index) == 1:
+          input_ids[0, mask_token_index[0]] = self.tokenizer.convert_tokens_to_ids(phrases[i])
           candidates_list = get_word_substitues(input_ids, attention_mask, mask_token_index, self.tokenizer, self.mlm_model, K=self.k, threshold=self.conf_thres)
           entry['query_num'] += len(input_ids)
         elif len(mask_token_index) > 1:
