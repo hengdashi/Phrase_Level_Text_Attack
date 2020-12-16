@@ -172,20 +172,20 @@ class Attacker:
         attention_mask = encoded['attention_mask'].to(self.device)
         mask_token_index = torch.where(input_ids == self.tokenizer.mask_token_id)[-1]
         # skip if part or all of masks exceed max_length
-        if len(mask_token_index) > j + 1:
+        if len(mask_token_index) != j + 1:
           continue
 
         
         candidates_list = []
         if len(phrase_masked_list) == 1:
-          #input_ids[0, mask_token_index[0]] = self.tokenizer.convert_tokens_to_ids(phrases[i])
-          encoded = self.tokenizer(text,
-                                 truncation=True,
-                                 padding=True,
-                                 return_token_type_ids=False,
-                                 return_tensors='pt')
-          input_ids = encoded['input_ids'].to(self.device)
-          attention_mask = encoded['attention_mask'].to(self.device)
+          input_ids[0, mask_token_index[0]] = self.tokenizer.convert_tokens_to_ids(phrases[i])
+          #encoded = self.tokenizer(text,
+          #                       truncation=True,
+          #                       padding=True,
+          #                       return_token_type_ids=False,
+          #                       return_tensors='pt')
+          #input_ids = encoded['input_ids'].to(self.device)
+          #attention_mask = encoded['attention_mask'].to(self.device)
           candidates_list = get_word_substitues(input_ids, attention_mask, mask_token_index, self.tokenizer, self.mlm_model, K=self.k, threshold=self.conf_thres)
           entry['query_num'] += len(input_ids)
         elif len(phrase_masked_list) > 1:
