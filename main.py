@@ -91,13 +91,14 @@ if __name__ == "__main__":
   test_ds = test_ds.map(phrase_tokenizer.tokenize)
 
   # create the attacker
-  attacker = Attacker(phrase_tokenizer, tokenizer, target_model, mlm_model, encoder_use,  device, k=8, beam_width=8, conf_thres=3.0, sent_semantic_thres=0.4, change_threshold = 0.1) #embeddings_cf,
-
+  params = {'k':10, 'beam_width':5, 'conf_thres':3.0, 'sent_semantic_thres':0.4, 'change_threshold':0.1}
+  attacker = Attacker(phrase_tokenizer, tokenizer, target_model, mlm_model, encoder_use,  device, **params) #embeddings_cf,
+  
   output_entries = []
   pred_failures = 0
   
-  output_pth = './data/adv_features.txt'
-  eval_f_pth = './data/eval.txt'
+  output_pth = './data/features/adv_features_no_mask_10_5.txt'
+  eval_f_pth = './data/eval/eval_no_mask_10_5.txt'
 
   # clean output file
   f = open(output_pth, "w")
@@ -115,20 +116,23 @@ if __name__ == "__main__":
       #print('changes: ', entry['changes'])
       
       new_entry = { k: entry[k] for k in {'text', 'label',  'pred_success', 'success', 'changes', 'final_adv',  'word_changes', 'phrase_changes', 'word_num', 'phrase_num',   'query_num', 'phrase_len' } }
-      output_entries.append(new_entry)
-      json.dump(new_entry, open(output_pth, "a"), indent=2)
-        
+      
       if not entry['pred_success']:
         pred_failures += 1
-      
+      else:
+        seq_embeddings = encoder_use([entry['final_adv'], entry['text']])
+        semantic_sim =  np.dot(*seq_embeddings)
+        new_entry['semantic_sim'] = float(semantic_sim)
+        
+      json.dump(new_entry, open(output_pth, "a"), indent=2)
+      output_entries.append(new_entry)
+        
       if (i + 1) % 100 == 0:
-        evaluate(output_entries, pred_failures, eval_f_pth)
+        evaluate(output_entries, pred_failures, eval_f_pth, params)
   
   print("--- %.2f mins ---" % (int(time.time() - start_time) / 60.0))
 
-  evaluate(output_entries, pred_failures, eval_f_pth)
-
-  
+  evaluate(output_entries, pred_failures, eval_f_pth, params)
 
 
   #  sequence = f"Distilled models are smaller than the models they mimic. Using them instead of the large versions would help reduce {tokenizer.mask_token} {tokenizer.mask_token}."
