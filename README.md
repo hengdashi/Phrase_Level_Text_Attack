@@ -25,10 +25,4 @@ pip install torch==1.7.0+cu110 torchvision==0.8.1+cu110 torchaudio===0.7.0 -f ht
 pip install -r requirements.txt
 pip install -e .
 python -m spacy download en_core_web_lg
-
-# install apex for mixed precision
-cd /path/to/desired/location/
-git clone https://github.com/NVIDIA/apex
-cd apex
-pip install -v --disable-pip-version-check --no-cache-dir --global-option="--cpp_ext" --global-option="--cuda_ext" ./
 ```

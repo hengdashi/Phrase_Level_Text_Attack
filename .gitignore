@@ -1,12 +1,8 @@
-# testing script
-test.py
-
 # tensorboard logs
 logs/
 
 # dataset
-data/*
-!data/wiki_download.sh
+data/
 
 # Notebooks for Test
 model/*.ipynb
