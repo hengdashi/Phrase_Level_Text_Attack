@@ -177,18 +177,18 @@ class Attacker:
 
         
         candidates_list = []
-        if len(mask_token_index) == 1:
-          #input_ids[0, mask_token_index[0]] = self.tokenizer.convert_tokens_to_ids(phrases[i])
-          encoded = self.tokenizer(text,
-                                 truncation=True,
-                                 padding=True,
-                                 return_token_type_ids=False,
-                                 return_tensors='pt')
-          input_ids = encoded['input_ids'].to(self.device)
-          attention_mask = encoded['attention_mask'].to(self.device)
+        if len(phrase_masked_list) == 1:
+          input_ids[0, mask_token_index[0]] = self.tokenizer.convert_tokens_to_ids(phrases[i])
+          #encoded = self.tokenizer(text,
+          #                       truncation=True,
+          #                       padding=True,
+          #                       return_token_type_ids=False,
+          #                       return_tensors='pt')
+          #input_ids = encoded['input_ids'].to(self.device)
+          #attention_mask = encoded['attention_mask'].to(self.device)
           candidates_list = get_word_substitues(input_ids, attention_mask, mask_token_index, self.tokenizer, self.mlm_model, K=self.k, threshold=self.conf_thres)
           entry['query_num'] += len(input_ids)
-        elif len(mask_token_index) > 1:
+        elif len(phrase_masked_list) > 1:
           candidates_list, qn = get_phrase_substitutes(input_ids, attention_mask, mask_token_index, self.stop_words, self.tokenizer, self.mlm_model, self.device, beam_width=self.beam_width, K=self.k)
           entry['query_num'] += qn
 
