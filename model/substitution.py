@@ -201,7 +201,7 @@ def get_phrase_substitutes(input_ids, attention_mask, mask_token_index, stop_wor
     
   return candidates_list, query_num
 
-def get_word_substitues(input_ids, attention_mask, mask_token_index, tokenizer, mlm_model, K=8, threshold=3.0):
+def get_word_substitutes(input_ids, attention_mask, mask_token_index, tokenizer, mlm_model, K=8, threshold=3.0):
   masked_logits = mlm_model(input_ids, attention_mask).logits
   masked_logits = torch.index_select(masked_logits, 1, mask_token_index)
   

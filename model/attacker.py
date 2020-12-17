@@ -20,7 +20,7 @@ from model.tokenizer import filter_unwanted_phrases, phrase_is_wanted
 from model.substitution import (
   get_important_scores,
   get_substitutes,
-  get_word_substitues,
+  get_word_substitutes,
   get_phrase_substitutes,
   get_unk_masked,
   get_phrase_masked_list
@@ -137,7 +137,7 @@ class Attacker:
     # sorted_n_words_in_phrase is a sorted numPy array containing the number of words in each filtered phrases ranked by importance
     # sorted_importance is a sorted PyTorch Tensor containing importance scores ranked by importance
 
-    max_change_threshold = len(filtered_indices)
+    max_change_threshold = len(entry['phrases'])
 
     # record how many perturbations have been made
     phrase_changes = 0
@@ -149,9 +149,9 @@ class Attacker:
     phrase_offsets = entry['phrase_offsets']
     n_words_in_phrases = entry['n_words_in_phrases']
 
-    for i in sorted_indices_np:
+    for idx, i in enumerate(sorted_indices_np):
       # break when attack is successful or changes exceed threshold
-      if phrase_changes/max_change_threshold > self.change_threshold:
+      if (idx+1)/max_change_threshold > self.change_threshold:
         break
 
       phrase_masked_list = get_phrase_masked_list(text,
@@ -185,7 +185,7 @@ class Attacker:
           #                       return_tensors='pt')
           #input_ids = encoded['input_ids'].to(self.device)
           #attention_mask = encoded['attention_mask'].to(self.device)
-          candidates_list = get_word_substitues(input_ids, attention_mask, mask_token_index, self.tokenizer, self.mlm_model, K=self.k, threshold=self.conf_thres)
+          candidates_list = get_word_substitutes(input_ids, attention_mask, mask_token_index, self.tokenizer, self.mlm_model, K=self.k, threshold=self.conf_thres)
           entry['query_num'] += len(input_ids)
         elif len(phrase_masked_list) > 1:
           candidates_list, qn = get_phrase_substitutes(input_ids, attention_mask, mask_token_index, self.stop_words, self.tokenizer, self.mlm_model, self.device, beam_width=self.beam_width, K=self.k)

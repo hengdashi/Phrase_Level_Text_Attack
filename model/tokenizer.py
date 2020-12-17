@@ -72,13 +72,13 @@ class PhraseTokenizer:
     # verb phrase
     # verb + preposition: 'sit up'
     pattern1 = [{'POS': 'VERB'},
-               {'POS': 'PRON', 'OP': '?'},
-               {'POS': 'ADP', 'OP': '+'}]
+                {'POS': 'PRON', 'OP': '?'},
+                {'POS': 'ADP', 'OP': '+'}]
 
     # preposition phrase: prep + noun + prep
     pattern2 = [{'POS': 'ADP'},
-               {'POS': 'NOUN'},
-               {'POS': 'ADP'}]
+                {'POS': 'NOUN'},
+                {'POS': 'ADP'}]
 
     # instantiate a Matcher instance
     phrase_matcher = Matcher(spacy_tokenizer.vocab)
